@@ -2,7 +2,7 @@ streamlit
 pandas
 numpy
 joblib
-streamlit-gsheets
+st-gsheets-connection
 gspread
 google-auth
 google-auth-oauthlib
