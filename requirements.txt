@@ -1,5 +1,9 @@
 streamlit
-numpy
 pandas
-scikit-learn
+numpy
 joblib
+streamlit-gsheets
+gspread
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
