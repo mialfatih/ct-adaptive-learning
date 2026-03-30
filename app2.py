@@ -48,6 +48,16 @@ def load_data(_conn):
     return df[EXPECTED_COLUMNS].copy()
 
 
+def clean_text_series(series):
+    return series.fillna("").astype(str).str.strip()
+
+
+def get_clean_value_counts(series):
+    s = clean_text_series(series)
+    s = s[s != ""]
+    return s.value_counts()
+
+
 try:
     data = load_data(conn)
 except Exception as e:
@@ -58,17 +68,30 @@ if data.empty:
     st.warning("Data_Siswa masih kosong.")
     st.stop()
 
-st.success(f"Data berhasil dimuat ✅ ({len(data)} baris)")
+# =========================
+# NORMALISASI DATA
+# =========================
+for col in [
+    "record_id", "timestamp", "NIS", "nama", "kelas",
+    "weakest_indicator", "prediksi_ml", "treatment_materi",
+    "treatment_level", "treatment_status", "status_selesai"
+]:
+    if col in data.columns:
+        data[col] = clean_text_series(data[col])
 
-# =========================
-# NORMALISASI ANGKA
-# =========================
 for col in [
     "D_score", "P_score", "A_score", "Alg_score",
     "total_score", "treatment_jumlah_soal", "posttest_score", "gain_score"
 ]:
     if col in data.columns:
         data[col] = pd.to_numeric(data[col], errors="coerce")
+
+if "timestamp" in data.columns:
+    data["timestamp_dt"] = pd.to_datetime(data["timestamp"], errors="coerce")
+else:
+    data["timestamp_dt"] = pd.NaT
+
+st.success(f"Data berhasil dimuat ✅ ({len(data)} baris)")
 
 # =========================
 # FILTER
@@ -80,44 +103,44 @@ c1, c2, c3, c4 = st.columns(4)
 with c1:
     kelas_options = ["Semua"]
     if "kelas" in data.columns:
-        kelas_values = data["kelas"].dropna().astype(str)
-        kelas_options += sorted([x for x in kelas_values.unique().tolist() if x.strip() != ""])
+        kelas_values = clean_text_series(data["kelas"])
+        kelas_options += sorted([x for x in kelas_values.unique().tolist() if x != ""])
     kelas_filter = st.selectbox("Filter Kelas", kelas_options)
 
 with c2:
     pred_options = ["Semua"]
     if "prediksi_ml" in data.columns:
-        pred_values = data["prediksi_ml"].dropna().astype(str)
-        pred_options += sorted([x for x in pred_values.unique().tolist() if x.strip() != ""])
+        pred_values = clean_text_series(data["prediksi_ml"])
+        pred_options += sorted([x for x in pred_values.unique().tolist() if x != ""])
     pred_filter = st.selectbox("Filter Prediksi ML", pred_options)
 
 with c3:
     treatment_status_options = ["Semua"]
     if "treatment_status" in data.columns:
-        ts_values = data["treatment_status"].dropna().astype(str)
-        treatment_status_options += sorted([x for x in ts_values.unique().tolist() if x.strip() != ""])
+        ts_values = clean_text_series(data["treatment_status"])
+        treatment_status_options += sorted([x for x in ts_values.unique().tolist() if x != ""])
     treatment_status_filter = st.selectbox("Filter Treatment Status", treatment_status_options)
 
 with c4:
     status_options = ["Semua"]
     if "status_selesai" in data.columns:
-        ss_values = data["status_selesai"].dropna().astype(str)
-        status_options += sorted([x for x in ss_values.unique().tolist() if x.strip() != ""])
+        ss_values = clean_text_series(data["status_selesai"])
+        status_options += sorted([x for x in ss_values.unique().tolist() if x != ""])
     status_filter = st.selectbox("Filter Status Selesai", status_options)
 
 filtered = data.copy()
 
 if kelas_filter != "Semua":
-    filtered = filtered[filtered["kelas"].astype(str) == kelas_filter]
+    filtered = filtered[filtered["kelas"] == kelas_filter]
 
 if pred_filter != "Semua":
-    filtered = filtered[filtered["prediksi_ml"].astype(str) == pred_filter]
+    filtered = filtered[filtered["prediksi_ml"] == pred_filter]
 
 if treatment_status_filter != "Semua":
-    filtered = filtered[filtered["treatment_status"].astype(str) == treatment_status_filter]
+    filtered = filtered[filtered["treatment_status"] == treatment_status_filter]
 
 if status_filter != "Semua":
-    filtered = filtered[filtered["status_selesai"].astype(str) == status_filter]
+    filtered = filtered[filtered["status_selesai"] == status_filter]
 
 # =========================
 # SEARCH
@@ -127,8 +150,8 @@ keyword = st.text_input("Cari berdasarkan NIS atau Nama", value="").strip().lowe
 
 if keyword:
     filtered = filtered[
-        filtered["NIS"].astype(str).str.lower().str.contains(keyword, na=False) |
-        filtered["nama"].astype(str).str.lower().str.contains(keyword, na=False)
+        filtered["NIS"].str.lower().str.contains(keyword, na=False) |
+        filtered["nama"].str.lower().str.contains(keyword, na=False)
     ]
 
 # =========================
@@ -171,34 +194,38 @@ with m5:
 c1, c2 = st.columns(2)
 
 with c1:
-    if "prediksi_ml" in filtered.columns:
-        st.subheader("Distribusi Prediksi ML")
-        pred_counts = filtered["prediksi_ml"].astype(str).value_counts()
-        if len(pred_counts) > 0:
-            st.bar_chart(pred_counts)
+    st.subheader("Distribusi Prediksi ML")
+    pred_counts = get_clean_value_counts(filtered["prediksi_ml"])
+    if len(pred_counts) > 0:
+        st.bar_chart(pred_counts)
+    else:
+        st.info("Belum ada data prediksi ML yang bisa ditampilkan.")
 
 with c2:
-    if "weakest_indicator" in filtered.columns:
-        st.subheader("Distribusi Weakest Indicator")
-        weak_counts = filtered["weakest_indicator"].astype(str).value_counts()
-        if len(weak_counts) > 0:
-            st.bar_chart(weak_counts)
+    st.subheader("Distribusi Weakest Indicator")
+    weak_counts = get_clean_value_counts(filtered["weakest_indicator"])
+    if len(weak_counts) > 0:
+        st.bar_chart(weak_counts)
+    else:
+        st.info("Belum ada data weakest indicator yang bisa ditampilkan.")
 
 c3, c4 = st.columns(2)
 
 with c3:
-    if "treatment_status" in filtered.columns:
-        st.subheader("Distribusi Treatment Status")
-        treat_counts = filtered["treatment_status"].astype(str).value_counts()
-        if len(treat_counts) > 0:
-            st.bar_chart(treat_counts)
+    st.subheader("Distribusi Treatment Status")
+    treat_counts = get_clean_value_counts(filtered["treatment_status"])
+    if len(treat_counts) > 0:
+        st.bar_chart(treat_counts)
+    else:
+        st.info("Belum ada data treatment status yang bisa ditampilkan.")
 
 with c4:
-    if "status_selesai" in filtered.columns:
-        st.subheader("Distribusi Status Selesai")
-        selesai_counts = filtered["status_selesai"].astype(str).value_counts()
-        if len(selesai_counts) > 0:
-            st.bar_chart(selesai_counts)
+    st.subheader("Distribusi Status Selesai")
+    selesai_counts = get_clean_value_counts(filtered["status_selesai"])
+    if len(selesai_counts) > 0:
+        st.bar_chart(selesai_counts)
+    else:
+        st.info("Belum ada data status selesai yang bisa ditampilkan.")
 
 # =========================
 # TABEL DATA
@@ -238,9 +265,13 @@ st.dataframe(
 # =========================
 st.subheader("10 Data Terakhir")
 
-if "timestamp" in filtered.columns:
-    preview = filtered.sort_values("timestamp", ascending=False).head(10)
-else:
+try:
+    if "timestamp_dt" in filtered.columns:
+        preview = filtered.sort_values("timestamp_dt", ascending=False).head(10)
+    else:
+        preview = filtered.head(10)
+except Exception as e:
+    st.warning(f"Gagal mengurutkan data berdasarkan timestamp: {e}")
     preview = filtered.head(10)
 
 st.dataframe(
@@ -250,11 +281,13 @@ st.dataframe(
 )
 
 # =========================
-# DOWNLOAD CSV
+# EXPORT CSV
 # =========================
 st.subheader("Export Data")
 
-csv_data = filtered.to_csv(index=False).encode("utf-8")
+export_df = filtered[display_columns].copy()
+csv_data = export_df.to_csv(index=False).encode("utf-8")
+
 st.download_button(
     label="Download CSV Hasil Filter",
     data=csv_data,
