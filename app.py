@@ -311,6 +311,10 @@ elif st.session_state["stage"] == "treatment":
     prof = st.session_state["student_profile"]
     state = st.session_state["treatment_state"]
 
+    # safety fallback
+    if "answered_count" not in state:
+        state["answered_count"] = 0
+
     st.subheader("Treatment Adaptif")
     st.write("Kerjakan soal treatment berikut. Jika waktu treatment habis, guru dapat mengarahkan untuk melewati tahap ini.")
 
@@ -337,7 +341,7 @@ elif st.session_state["stage"] == "treatment":
     with c2:
         st.metric("Level Soal", state["current_level"].capitalize())
     with c3:
-        st.metric("Jumlah Soal Treatment", state["treatment_count"])
+        st.metric("Jumlah Soal Treatment", state.get("answered_count", 0))
 
     with st.container(border=True):
         st.write(f"**Materi:** {q['materi']}")
@@ -366,15 +370,20 @@ elif st.session_state["stage"] == "treatment":
 
             correct = (choice == q["answer"])
 
+            # hitung semua soal treatment yang dijawab, bukan hanya soal unik
+            state["answered_count"] = state.get("answered_count", 0) + 1
+
+            # history_ids tetap untuk anti-repeat
             if q["id"] not in state["history_ids"]:
                 state["history_ids"].append(q["id"])
-                state["served_items"].append({
-                    "id": q["id"],
-                    "materi": q["materi"],
-                    "ct": q["ct"],
-                    "level": q["level"]
-                })
-                state["treatment_count"] += 1
+
+            # served_items dipakai untuk ringkasan materi/level, jadi boleh simpan setiap submit
+            state["served_items"].append({
+                "id": q["id"],
+                "materi": q["materi"],
+                "ct": q["ct"],
+                "level": q["level"]
+            })
 
             if correct:
                 state["points"] += 1
@@ -438,6 +447,10 @@ elif st.session_state["stage"] == "posttest":
         submitted = st.form_submit_button("Submit Posttest & Simpan Hasil", type="primary")
 
     if submitted:
+        if st.session_state.get("saved_to_db", False):
+            st.warning("Data sesi ini sudah pernah disimpan.")
+            st.stop()
+
         answered_ids = {
             qid for qid, ans in st.session_state["posttest_answers"].items()
             if str(ans).strip() != ""
