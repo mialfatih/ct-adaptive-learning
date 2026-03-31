@@ -241,7 +241,7 @@ def init_treatment_state(scores: dict):
         "history_ids": [],
         "project_ready": False,
         "served_items": [],
-        "treatment_count": 0
+        "answered_count": 0
     }
 
 
@@ -317,28 +317,13 @@ def fetch_question(bank: pd.DataFrame, ct: str, level: str, history_ids: list):
 # =========================
 # SAVE HELPERS
 # =========================
-def generate_record_id(df: pd.DataFrame) -> str:
-    if df.empty or "record_id" not in df.columns:
-        return "R001"
-
-    existing = df["record_id"].astype(str).tolist()
-    nums = []
-
-    for rid in existing:
-        rid = rid.strip().upper()
-        if rid.startswith("R"):
-            try:
-                nums.append(int(rid[1:]))
-            except Exception:
-                pass
-
-    next_num = max(nums) + 1 if nums else 1
-    return f"R{next_num:03d}"
+def generate_record_id() -> str:
+    return f"R{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
 
 
 def summarize_treatment(served_items: list):
     if not served_items:
-        return "-", "-", 0
+        return "-", "-"
 
     materi_list = []
     level_list = []
@@ -355,9 +340,8 @@ def summarize_treatment(served_items: list):
 
     treatment_materi = ", ".join(materi_list) if materi_list else "-"
     treatment_level = ", ".join(level_list) if level_list else "-"
-    treatment_jumlah_soal = len(served_items)
 
-    return treatment_materi, treatment_level, treatment_jumlah_soal
+    return treatment_materi, treatment_level
 
 
 def build_result_row(
@@ -368,10 +352,11 @@ def build_result_row(
 ):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    treatment_materi, treatment_level, treatment_jumlah_soal = summarize_treatment(
+    treatment_materi, treatment_level = summarize_treatment(
         treatment_state.get("served_items", [])
     )
 
+    treatment_jumlah_soal = int(treatment_state.get("answered_count", 0))
     gain_score = int(posttest_score) - int(profile["total"])
 
     return {
@@ -398,21 +383,16 @@ def build_result_row(
 
 
 def save_student_result(conn, result_row: dict):
-    old_df = load_data_siswa(conn)
-
-    for col in DATA_SISWA_COLUMNS:
-        if col not in old_df.columns:
-            old_df[col] = ""
-
     row_to_save = result_row.copy()
-    row_to_save["record_id"] = generate_record_id(old_df)
+    row_to_save["record_id"] = generate_record_id()
 
-    new_df = pd.concat(
-        [old_df[DATA_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
-        ignore_index=True
+    new_row_df = pd.DataFrame([row_to_save])
+
+    conn.write(
+        worksheet="Data_Siswa",
+        data=new_row_df,
+        append=True
     )
-
-    conn.update(worksheet="Data_Siswa", data=new_df)
 
     load_data_siswa.clear()
     return row_to_save
