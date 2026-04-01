@@ -14,7 +14,11 @@ from utils import (
     advance_state,
     fetch_question,
     build_result_row,
-    save_student_result
+    save_student_result,
+    load_pretest_siswa,
+    find_existing_pretest,
+    build_pretest_row,
+    save_pretest_result
 )
 
 # =========================
@@ -163,6 +167,10 @@ if st.session_state["stage"] == "identitas":
             st.warning("NIS / ID wajib diisi.")
             st.stop()
 
+        if not student_name.strip():
+            st.warning("Nama wajib diisi.")
+            st.stop()
+
         pretest_df = get_phase_questions(bank, "pretest")
         posttest_df = get_phase_questions(bank, "posttest")
 
@@ -174,6 +182,53 @@ if st.session_state["stage"] == "identitas":
             st.error("Soal posttest tidak ditemukan di Bank_Soal.")
             st.stop()
 
+        # cek apakah siswa sudah pernah menyelesaikan pretest
+        existing_pretest = None
+        try:
+            pretest_saved_df = load_pretest_siswa(conn)
+            existing_pretest = find_existing_pretest(
+                pretest_saved_df,
+                student_id.strip(),
+                student_name.strip()
+            )
+        except Exception as e:
+            st.warning(f"Gagal memeriksa data pretest sebelumnya: {e}")
+
+        # kalau ditemukan pretest lama, skip pretest
+        if existing_pretest is not None:
+            scores = {
+                "D": int(existing_pretest["D_score"]),
+                "P": int(existing_pretest["P_score"]),
+                "A": int(existing_pretest["A_score"]),
+                "Alg": int(existing_pretest["Alg_score"])
+            }
+
+            st.session_state["student_profile"] = {
+                "student_id": str(existing_pretest["NIS"]).strip(),
+                "student_name": str(existing_pretest["nama"]).strip(),
+                "student_class": str(existing_pretest["kelas"]).strip(),
+                "scores": scores,
+                "total": int(existing_pretest["total_score"]),
+                "overall": str(existing_pretest["prediksi_ml"]).strip(),
+                "weak_indicator": str(existing_pretest["weakest_indicator"]).strip(),
+                "needs": [k for k, v in scores.items() if v < 7]
+            }
+
+            st.session_state["pretest_df"] = pretest_df
+            st.session_state["posttest_df"] = posttest_df
+            st.session_state["pretest_answers"] = {}
+            st.session_state["posttest_answers"] = {}
+            st.session_state["treatment_state"] = init_treatment_state(scores)
+            st.session_state["current_question"] = None
+            st.session_state["final_result"] = None
+            st.session_state["saved_to_db"] = False
+            st.session_state["treatment_status"] = "selesai"
+            st.session_state["stage"] = "hasil_pretest"
+
+            st.success("Data pretest sebelumnya ditemukan. Kamu bisa melanjutkan ke treatment.")
+            st.rerun()
+
+        # kalau belum ada, lanjut normal ke pretest
         st.session_state["student_profile"] = {
             "student_id": student_id.strip(),
             "student_name": student_name.strip(),
@@ -258,6 +313,13 @@ elif st.session_state["stage"] == "pretest":
             "needs": needs
         })
 
+        # simpan hasil pretest ke sheet Pretest_Siswa
+        try:
+            pretest_row = build_pretest_row(st.session_state["student_profile"])
+            save_pretest_result(conn, pretest_row)
+        except Exception as e:
+            st.warning(f"Hasil pretest belum berhasil disimpan ke Pretest_Siswa: {e}")
+
         st.session_state["treatment_state"] = init_treatment_state(scores)
         st.session_state["current_question"] = None
         st.session_state["treatment_status"] = "selesai"
@@ -308,10 +370,8 @@ elif st.session_state["stage"] == "treatment":
     render_stage_badge("Treatment")
     render_student_box()
 
-    prof = st.session_state["student_profile"]
     state = st.session_state["treatment_state"]
 
-    # safety fallback
     if "answered_count" not in state:
         state["answered_count"] = 0
 
@@ -370,14 +430,11 @@ elif st.session_state["stage"] == "treatment":
 
             correct = (choice == q["answer"])
 
-            # hitung semua soal treatment yang dijawab, bukan hanya soal unik
             state["answered_count"] = state.get("answered_count", 0) + 1
 
-            # history_ids tetap untuk anti-repeat
             if q["id"] not in state["history_ids"]:
                 state["history_ids"].append(q["id"])
 
-            # served_items dipakai untuk ringkasan materi/level, jadi boleh simpan setiap submit
             state["served_items"].append({
                 "id": q["id"],
                 "materi": q["materi"],
