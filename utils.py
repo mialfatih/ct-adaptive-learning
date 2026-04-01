@@ -31,6 +31,22 @@ DATA_SISWA_COLUMNS = [
     "status_selesai"
 ]
 
+PRETEST_SISWA_COLUMNS = [
+    "pretest_id",
+    "timestamp",
+    "NIS",
+    "nama",
+    "kelas",
+    "D_score",
+    "P_score",
+    "A_score",
+    "Alg_score",
+    "total_score",
+    "weakest_indicator",
+    "prediksi_ml",
+    "status_pretest"
+]
+
 
 # =========================
 # LOADERS
@@ -114,6 +130,32 @@ def load_data_siswa(_conn) -> pd.DataFrame:
                     df[col] = ""
 
             return df[DATA_SISWA_COLUMNS].copy()
+
+        except Exception as e:
+            last_error = e
+            time.sleep(1)
+
+    raise last_error
+
+
+@st.cache_data(ttl=30)
+def load_pretest_siswa(_conn) -> pd.DataFrame:
+    last_error = None
+
+    for _ in range(3):
+        try:
+            df = _conn.read(worksheet="Pretest_Siswa")
+
+            if df is None or len(df) == 0:
+                return pd.DataFrame(columns=PRETEST_SISWA_COLUMNS)
+
+            df.columns = [str(c).strip() for c in df.columns]
+
+            for col in PRETEST_SISWA_COLUMNS:
+                if col not in df.columns:
+                    df[col] = ""
+
+            return df[PRETEST_SISWA_COLUMNS].copy()
 
         except Exception as e:
             last_error = e
@@ -312,6 +354,70 @@ def fetch_question(bank: pd.DataFrame, ct: str, level: str, history_ids: list):
         return None
 
     return pool.sample(1).iloc[0]
+
+
+# =========================
+# PRETEST_SISWA HELPERS
+# =========================
+def generate_pretest_id() -> str:
+    return f"PT{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+
+
+def find_existing_pretest(pretest_df: pd.DataFrame, nis: str, nama: str):
+    if pretest_df.empty:
+        return None
+
+    temp = pretest_df.copy()
+    temp["NIS"] = temp["NIS"].astype(str).str.strip()
+    temp["nama"] = temp["nama"].astype(str).str.strip().str.lower()
+
+    nis = str(nis).strip()
+    nama = str(nama).strip().lower()
+
+    matched = temp[
+        (temp["NIS"] == nis) &
+        (temp["nama"] == nama)
+    ].copy()
+
+    if matched.empty:
+        return None
+
+    matched["timestamp_dt"] = pd.to_datetime(matched["timestamp"], errors="coerce")
+    matched = matched.sort_values("timestamp_dt", ascending=False)
+
+    return matched.iloc[0].to_dict()
+
+
+def build_pretest_row(profile: dict) -> dict:
+    return {
+        "pretest_id": generate_pretest_id(),
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "NIS": profile["student_id"],
+        "nama": profile["student_name"],
+        "kelas": profile["student_class"],
+        "D_score": profile["scores"]["D"],
+        "P_score": profile["scores"]["P"],
+        "A_score": profile["scores"]["A"],
+        "Alg_score": profile["scores"]["Alg"],
+        "total_score": profile["total"],
+        "weakest_indicator": profile["weak_indicator"],
+        "prediksi_ml": profile["overall"],
+        "status_pretest": "selesai"
+    }
+
+
+def save_pretest_result(conn, pretest_row: dict):
+    row_to_save = pretest_row.copy()
+    row_df = pd.DataFrame([row_to_save])
+
+    conn.write(
+        worksheet="Pretest_Siswa",
+        data=row_df,
+        append=True
+    )
+
+    load_pretest_siswa.clear()
+    return row_to_save
 
 
 # =========================
