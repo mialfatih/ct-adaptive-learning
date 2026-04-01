@@ -108,7 +108,6 @@ def load_bank_soal(_conn) -> pd.DataFrame:
         return x
 
     df["ct"] = df["ct"].apply(normalize_ct)
-
     return df
 
 
@@ -408,16 +407,34 @@ def build_pretest_row(profile: dict) -> dict:
 
 def save_pretest_result(conn, pretest_row: dict):
     row_to_save = pretest_row.copy()
-    row_df = pd.DataFrame([row_to_save])
 
-    conn.write(
-        worksheet="Pretest_Siswa",
-        data=row_df,
-        append=True
-    )
+    # coba append dulu
+    try:
+        row_df = pd.DataFrame([row_to_save])
+        conn.write(
+            worksheet="Pretest_Siswa",
+            data=row_df,
+            append=True
+        )
+        load_pretest_siswa.clear()
+        return row_to_save
 
-    load_pretest_siswa.clear()
-    return row_to_save
+    # kalau append gagal, fallback ke read + update
+    except Exception:
+        old_df = load_pretest_siswa(conn)
+
+        for col in PRETEST_SISWA_COLUMNS:
+            if col not in old_df.columns:
+                old_df[col] = ""
+
+        new_df = pd.concat(
+            [old_df[PRETEST_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
+            ignore_index=True
+        )
+
+        conn.update(worksheet="Pretest_Siswa", data=new_df)
+        load_pretest_siswa.clear()
+        return row_to_save
 
 
 # =========================
