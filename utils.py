@@ -1,69 +1,64 @@
-import time
+import json
 from datetime import datetime
+from typing import Any, Dict, Optional
 
 import joblib
 import numpy as np
 import pandas as pd
 import streamlit as st
+from supabase import Client, create_client
 
 INT_TO_LABEL = {0: "rendah", 1: "sedang", 2: "tinggi"}
 THRESHOLD_LOW_DEFAULT = 7
 
-DATA_SISWA_COLUMNS = [
-    "record_id",
-    "timestamp",
-    "NIS",
-    "nama",
-    "kelas",
-    "D_score",
-    "P_score",
-    "A_score",
-    "Alg_score",
-    "total_score",
-    "weakest_indicator",
-    "prediksi_ml",
-    "treatment_materi",
-    "treatment_level",
-    "treatment_jumlah_soal",
-    "treatment_status",
-    "posttest_score",
-    "gain_score",
-    "status_selesai"
-]
 
-PRETEST_SISWA_COLUMNS = [
-    "pretest_id",
-    "timestamp",
-    "NIS",
-    "nama",
-    "kelas",
-    "D_score",
-    "P_score",
-    "A_score",
-    "Alg_score",
-    "total_score",
-    "weakest_indicator",
-    "prediksi_ml",
-    "status_pretest"
-]
+# =========================
+# SUPABASE
+# =========================
+@st.cache_resource
+def get_supabase() -> Client:
+    """
+    Inisialisasi client Supabase dari Streamlit secrets.
+    Pastikan secrets berisi:
+    SUPABASE_URL = "https://xxxx.supabase.co"
+    SUPABASE_KEY = "xxxx"
+    """
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+
+def now_iso() -> str:
+    return datetime.utcnow().isoformat()
 
 
 # =========================
-# LOADERS
+# MODEL
 # =========================
 @st.cache_resource
 def load_model(path: str):
     return joblib.load(path)
 
 
+# =========================
+# BANK SOAL
+# =========================
 @st.cache_data(ttl=60)
-def load_bank_soal(_conn) -> pd.DataFrame:
-    df = _conn.read(worksheet="Bank_Soal")
+def load_bank_soal() -> pd.DataFrame:
+    supabase = get_supabase()
 
-    if df is None or len(df) == 0:
+    response = (
+        supabase
+        .table("bank_soal")
+        .select("*")
+        .execute()
+    )
+
+    data = response.data or []
+    df = pd.DataFrame(data)
+
+    if df.empty:
         return pd.DataFrame()
-
-    df.columns = [str(c).strip() for c in df.columns]
 
     expected_cols = [
         "id",
@@ -112,61 +107,6 @@ def load_bank_soal(_conn) -> pd.DataFrame:
     return df
 
 
-@st.cache_data(ttl=30)
-def load_data_siswa(_conn) -> pd.DataFrame:
-    last_error = None
-
-    for _ in range(3):
-        try:
-            df = _conn.read(worksheet="Data_Siswa")
-
-            if df is None or len(df) == 0:
-                return pd.DataFrame(columns=DATA_SISWA_COLUMNS)
-
-            df.columns = [str(c).strip() for c in df.columns]
-
-            for col in DATA_SISWA_COLUMNS:
-                if col not in df.columns:
-                    df[col] = ""
-
-            return df[DATA_SISWA_COLUMNS].copy()
-
-        except Exception as e:
-            last_error = e
-            time.sleep(1)
-
-    raise last_error
-
-
-@st.cache_data(ttl=30)
-def load_pretest_siswa(_conn) -> pd.DataFrame:
-    last_error = None
-
-    for _ in range(3):
-        try:
-            df = _conn.read(worksheet="Pretest_Siswa")
-
-            if df is None or len(df) == 0:
-                return pd.DataFrame(columns=PRETEST_SISWA_COLUMNS)
-
-            df.columns = [str(c).strip() for c in df.columns]
-
-            for col in PRETEST_SISWA_COLUMNS:
-                if col not in df.columns:
-                    df[col] = ""
-
-            return df[PRETEST_SISWA_COLUMNS].copy()
-
-        except Exception as e:
-            last_error = e
-            time.sleep(1)
-
-    raise last_error
-
-
-# =========================
-# DATA HELPERS
-# =========================
 def get_phase_questions(bank: pd.DataFrame, phase: str) -> pd.DataFrame:
     phase = str(phase).strip().lower()
     df = bank[bank["phase"] == phase].copy()
@@ -357,41 +297,294 @@ def fetch_question(bank: pd.DataFrame, ct: str, level: str, history_ids: list):
 
 
 # =========================
-# PRETEST_SISWA HELPERS
+# SISWA HELPERS
 # =========================
-def generate_pretest_id() -> str:
-    return f"PT{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+def get_siswa_by_nis(nis: str) -> Optional[Dict[str, Any]]:
+    supabase = get_supabase()
+
+    response = (
+        supabase
+        .table("siswa")
+        .select("*")
+        .eq("nis", str(nis).strip())
+        .limit(1)
+        .execute()
+    )
+
+    rows = response.data or []
+    return rows[0] if rows else None
 
 
-def find_existing_pretest(pretest_df: pd.DataFrame, nis: str, nama: str):
-    if pretest_df.empty:
-        return None
+def create_siswa(nis: str, nama: str, kelas: str) -> Dict[str, Any]:
+    supabase = get_supabase()
 
-    temp = pretest_df.copy()
-    temp["NIS"] = temp["NIS"].astype(str).str.strip()
-    temp["nama"] = temp["nama"].astype(str).str.strip().str.lower()
+    payload = {
+        "nis": str(nis).strip(),
+        "nama": str(nama).strip(),
+        "kelas": str(kelas).strip()
+    }
 
-    nis = str(nis).strip()
-    nama = str(nama).strip().lower()
+    response = (
+        supabase
+        .table("siswa")
+        .insert(payload)
+        .execute()
+    )
 
-    matched = temp[
-        (temp["NIS"] == nis) &
-        (temp["nama"] == nama)
-    ].copy()
-
-    if matched.empty:
-        return None
-
-    matched["timestamp_dt"] = pd.to_datetime(matched["timestamp"], errors="coerce")
-    matched = matched.sort_values("timestamp_dt", ascending=False)
-
-    return matched.iloc[0].to_dict()
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Gagal membuat data siswa.")
+    return rows[0]
 
 
-def build_pretest_row(profile: dict) -> dict:
-    return {
-        "pretest_id": generate_pretest_id(),
-        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+def get_or_create_siswa(nis: str, nama: str, kelas: str) -> Dict[str, Any]:
+    siswa = get_siswa_by_nis(nis)
+
+    if siswa:
+        return siswa
+
+    return create_siswa(nis, nama, kelas)
+
+
+# =========================
+# SESSION HELPERS
+# =========================
+def get_active_session_by_siswa_id(siswa_id: str) -> Optional[Dict[str, Any]]:
+    supabase = get_supabase()
+
+    response = (
+        supabase
+        .table("session_pembelajaran")
+        .select("*")
+        .eq("siswa_id", siswa_id)
+        .neq("status_session", "selesai")
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+
+    rows = response.data or []
+    return rows[0] if rows else None
+
+
+def create_new_session(siswa_id: str) -> Dict[str, Any]:
+    supabase = get_supabase()
+
+    payload = {
+        "siswa_id": siswa_id,
+        "status_session": "pretest",
+        "pretest_selesai": False,
+        "posttest_selesai": False,
+        "treatment_status": "belum_mulai",
+        "d_score": 0,
+        "p_score": 0,
+        "a_score": 0,
+        "alg_score": 0,
+        "total_score": 0,
+        "answered_count": 0,
+        "points": 0,
+        "current_ct_idx": 0,
+        "priority_order_json": [],
+        "start_level_map_json": {},
+        "mastered_ct_json": [],
+        "history_ids_json": [],
+        "served_items_json": [],
+        "project_ready": False
+    }
+
+    response = (
+        supabase
+        .table("session_pembelajaran")
+        .insert(payload)
+        .execute()
+    )
+
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Gagal membuat session pembelajaran baru.")
+    return rows[0]
+
+
+def get_or_create_active_session(siswa_id: str) -> Dict[str, Any]:
+    session_row = get_active_session_by_siswa_id(siswa_id)
+
+    if session_row:
+        return session_row
+
+    return create_new_session(siswa_id)
+
+
+def update_session_after_pretest(
+    session_id: str,
+    profile: dict,
+    treatment_state: dict
+) -> Dict[str, Any]:
+    supabase = get_supabase()
+
+    payload = {
+        "status_session": "treatment",
+        "pretest_selesai": True,
+        "treatment_status": "berjalan",
+        "d_score": int(profile["scores"]["D"]),
+        "p_score": int(profile["scores"]["P"]),
+        "a_score": int(profile["scores"]["A"]),
+        "alg_score": int(profile["scores"]["Alg"]),
+        "total_score": int(profile["total"]),
+        "weakest_indicator": profile["weak_indicator"],
+        "prediksi_ml": profile["overall"],
+        "answered_count": int(treatment_state.get("answered_count", 0)),
+        "current_ct": treatment_state.get("current_ct"),
+        "current_level": treatment_state.get("current_level"),
+        "points": int(treatment_state.get("points", 0)),
+        "current_ct_idx": int(treatment_state.get("current_ct_idx", 0)),
+        "priority_order_json": treatment_state.get("priority_order", []),
+        "start_level_map_json": treatment_state.get("start_level_map", {}),
+        "mastered_ct_json": treatment_state.get("mastered_ct", []),
+        "history_ids_json": treatment_state.get("history_ids", []),
+        "served_items_json": treatment_state.get("served_items", []),
+        "project_ready": bool(treatment_state.get("project_ready", False)),
+        "updated_at": now_iso()
+    }
+
+    response = (
+        supabase
+        .table("session_pembelajaran")
+        .update(payload)
+        .eq("id", session_id)
+        .execute()
+    )
+
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Gagal update session setelah pretest.")
+    return rows[0]
+
+
+def update_session_treatment_progress(
+    session_id: str,
+    state: dict,
+    treatment_status: str = "berjalan"
+) -> Dict[str, Any]:
+    supabase = get_supabase()
+
+    payload = {
+        "status_session": "treatment" if not state.get("project_ready", False) else "posttest",
+        "treatment_status": treatment_status if not state.get("project_ready", False) else "selesai",
+        "answered_count": int(state.get("answered_count", 0)),
+        "current_ct": state.get("current_ct"),
+        "current_level": state.get("current_level"),
+        "points": int(state.get("points", 0)),
+        "current_ct_idx": int(state.get("current_ct_idx", 0)),
+        "priority_order_json": state.get("priority_order", []),
+        "start_level_map_json": state.get("start_level_map", {}),
+        "mastered_ct_json": state.get("mastered_ct", []),
+        "history_ids_json": state.get("history_ids", []),
+        "served_items_json": state.get("served_items", []),
+        "project_ready": bool(state.get("project_ready", False)),
+        "updated_at": now_iso()
+    }
+
+    response = (
+        supabase
+        .table("session_pembelajaran")
+        .update(payload)
+        .eq("id", session_id)
+        .execute()
+    )
+
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Gagal update progress treatment.")
+    return rows[0]
+
+
+def mark_session_skip_treatment(session_id: str, state: dict) -> Dict[str, Any]:
+    supabase = get_supabase()
+
+    payload = {
+        "status_session": "posttest",
+        "treatment_status": "skip",
+        "answered_count": int(state.get("answered_count", 0)),
+        "current_ct": state.get("current_ct"),
+        "current_level": state.get("current_level"),
+        "points": int(state.get("points", 0)),
+        "current_ct_idx": int(state.get("current_ct_idx", 0)),
+        "priority_order_json": state.get("priority_order", []),
+        "start_level_map_json": state.get("start_level_map", {}),
+        "mastered_ct_json": state.get("mastered_ct", []),
+        "history_ids_json": state.get("history_ids", []),
+        "served_items_json": state.get("served_items", []),
+        "project_ready": bool(state.get("project_ready", False)),
+        "updated_at": now_iso()
+    }
+
+    response = (
+        supabase
+        .table("session_pembelajaran")
+        .update(payload)
+        .eq("id", session_id)
+        .execute()
+    )
+
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Gagal menandai skip treatment.")
+    return rows[0]
+
+
+def update_session_final(
+    session_id: str,
+    profile: dict,
+    treatment_state: dict,
+    posttest_score: int,
+    treatment_status: str = "selesai"
+) -> Dict[str, Any]:
+    supabase = get_supabase()
+
+    treatment_materi, treatment_level = summarize_treatment(
+        treatment_state.get("served_items", [])
+    )
+    treatment_jumlah_soal = int(treatment_state.get("answered_count", 0))
+    gain_score = int(posttest_score) - int(profile["total"])
+
+    payload = {
+        "status_session": "selesai",
+        "posttest_selesai": True,
+        "treatment_status": treatment_status,
+        "answered_count": treatment_jumlah_soal,
+        "current_ct": treatment_state.get("current_ct"),
+        "current_level": treatment_state.get("current_level"),
+        "points": int(treatment_state.get("points", 0)),
+        "current_ct_idx": int(treatment_state.get("current_ct_idx", 0)),
+        "priority_order_json": treatment_state.get("priority_order", []),
+        "start_level_map_json": treatment_state.get("start_level_map", {}),
+        "mastered_ct_json": treatment_state.get("mastered_ct", []),
+        "history_ids_json": treatment_state.get("history_ids", []),
+        "served_items_json": treatment_state.get("served_items", []),
+        "project_ready": bool(treatment_state.get("project_ready", False)),
+        "posttest_score": int(posttest_score),
+        "gain_score": int(gain_score),
+        "finished_at": now_iso(),
+        "updated_at": now_iso()
+    }
+
+    response = (
+        supabase
+        .table("session_pembelajaran")
+        .update(payload)
+        .eq("id", session_id)
+        .execute()
+    )
+
+    rows = response.data or []
+    if not rows:
+        raise ValueError("Gagal update hasil akhir session.")
+    session_row = rows[0]
+
+    # kembalikan ringkasan hasil untuk ditampilkan di app
+    result_row = {
+        "record_id": session_row["id"],
+        "timestamp": session_row.get("finished_at") or session_row.get("updated_at"),
         "NIS": profile["student_id"],
         "nama": profile["student_name"],
         "kelas": profile["student_class"],
@@ -402,39 +595,60 @@ def build_pretest_row(profile: dict) -> dict:
         "total_score": profile["total"],
         "weakest_indicator": profile["weak_indicator"],
         "prediksi_ml": profile["overall"],
-        "status_pretest": "selesai"
+        "treatment_materi": treatment_materi,
+        "treatment_level": treatment_level,
+        "treatment_jumlah_soal": treatment_jumlah_soal,
+        "treatment_status": treatment_status,
+        "posttest_score": int(posttest_score),
+        "gain_score": int(gain_score),
+        "status_selesai": "selesai"
+    }
+
+    return result_row
+
+
+# =========================
+# RESTORE HELPERS
+# =========================
+def restore_student_profile_from_session(siswa_row: dict, session_row: dict) -> dict:
+    scores = {
+        "D": int(session_row.get("d_score") or 0),
+        "P": int(session_row.get("p_score") or 0),
+        "A": int(session_row.get("a_score") or 0),
+        "Alg": int(session_row.get("alg_score") or 0)
+    }
+
+    return {
+        "student_id": str(siswa_row.get("nis", "")).strip(),
+        "student_name": str(siswa_row.get("nama", "")).strip(),
+        "student_class": str(siswa_row.get("kelas", "")).strip(),
+        "scores": scores,
+        "total": int(session_row.get("total_score") or 0),
+        "overall": str(session_row.get("prediksi_ml") or "").strip(),
+        "weak_indicator": str(session_row.get("weakest_indicator") or "").strip(),
+        "needs": [k for k, v in scores.items() if v < THRESHOLD_LOW_DEFAULT]
     }
 
 
-def save_pretest_result(conn, pretest_row: dict):
-    row_to_save = pretest_row.copy()
-
-    old_df = load_pretest_siswa(conn)
-
-    for col in PRETEST_SISWA_COLUMNS:
-        if col not in old_df.columns:
-            old_df[col] = ""
-
-    new_df = pd.concat(
-        [old_df[PRETEST_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
-        ignore_index=True
-    )
-
-    time.sleep(0.3)
-
-    conn.update(worksheet="Pretest_Siswa", data=new_df)
-
-    load_pretest_siswa.clear()
-    return row_to_save
+def restore_treatment_state_from_session(session_row: dict) -> dict:
+    return {
+        "priority_order": session_row.get("priority_order_json") or [],
+        "start_level_map": session_row.get("start_level_map_json") or {},
+        "current_ct_idx": int(session_row.get("current_ct_idx") or 0),
+        "current_ct": session_row.get("current_ct"),
+        "current_level": session_row.get("current_level"),
+        "points": int(session_row.get("points") or 0),
+        "mastered_ct": session_row.get("mastered_ct_json") or [],
+        "history_ids": session_row.get("history_ids_json") or [],
+        "project_ready": bool(session_row.get("project_ready") or False),
+        "served_items": session_row.get("served_items_json") or [],
+        "answered_count": int(session_row.get("answered_count") or 0)
+    }
 
 
 # =========================
-# SAVE HELPERS
+# LEGACY-COMPATIBLE RESULT BUILDER
 # =========================
-def generate_record_id() -> str:
-    return f"R{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
-
-
 def summarize_treatment(served_items: list):
     if not served_items:
         return "-", "-"
@@ -464,6 +678,10 @@ def build_result_row(
     posttest_score: int,
     treatment_status: str = "selesai"
 ):
+    """
+    Dipertahankan untuk kompatibilitas jika masih dipakai di app lama,
+    tapi untuk Supabase sebaiknya pakai update_session_final().
+    """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     treatment_materi, treatment_level = summarize_treatment(
@@ -496,24 +714,12 @@ def build_result_row(
     }
 
 
-def save_student_result(conn, result_row: dict):
-    row_to_save = result_row.copy()
-    row_to_save["record_id"] = generate_record_id()
-
-    old_df = load_data_siswa(conn)
-
-    for col in DATA_SISWA_COLUMNS:
-        if col not in old_df.columns:
-            old_df[col] = ""
-
-    new_df = pd.concat(
-        [old_df[DATA_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
-        ignore_index=True
+def save_student_result(*args, **kwargs):
+    """
+    Dummy compatibility wrapper.
+    Di arsitektur Supabase baru, jangan pakai ini lagi.
+    Pakai update_session_final(...).
+    """
+    raise NotImplementedError(
+        "Untuk Supabase, gunakan update_session_final(session_id, profile, treatment_state, posttest_score, treatment_status)."
     )
-
-    time.sleep(0.3)
-
-    conn.update(worksheet="Data_Siswa", data=new_df)
-
-    load_data_siswa.clear()
-    return row_to_save
