@@ -3,8 +3,4 @@ pandas
 numpy
 joblib
 scikit-learn
-st-gsheets-connection
-gspread
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
+supabase
