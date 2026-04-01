@@ -1,5 +1,4 @@
 import streamlit as st
-from streamlit_gsheets import GSheetsConnection
 
 from utils import (
     load_model,
@@ -13,12 +12,15 @@ from utils import (
     level_target,
     advance_state,
     fetch_question,
-    build_result_row,
-    save_student_result,
-    load_pretest_siswa,
-    find_existing_pretest,
-    build_pretest_row,
-    save_pretest_result
+    get_or_create_siswa,
+    get_active_session_by_siswa_id,
+    get_or_create_active_session,
+    update_session_after_pretest,
+    update_session_treatment_progress,
+    mark_session_skip_treatment,
+    update_session_final,
+    restore_student_profile_from_session,
+    restore_treatment_state_from_session,
 )
 
 # =========================
@@ -32,11 +34,6 @@ st.set_page_config(
 MODEL_PATH = "models/knn_ct_model_k11.pkl"
 
 # =========================
-# CONNECTION
-# =========================
-conn = st.connection("gsheets", type=GSheetsConnection)
-
-# =========================
 # LOAD RESOURCES
 # =========================
 try:
@@ -46,9 +43,9 @@ except Exception as e:
     st.stop()
 
 try:
-    bank = load_bank_soal(conn)
+    bank = load_bank_soal()
 except Exception as e:
-    st.error(f"Gagal load Bank_Soal dari Google Sheets: {e}")
+    st.error(f"Gagal load Bank_Soal dari Supabase: {e}")
     st.stop()
 
 if bank.empty:
@@ -61,6 +58,8 @@ if bank.empty:
 defaults = {
     "stage": "identitas",
     "student_profile": None,
+    "siswa_row": None,
+    "session_row": None,
     "pretest_df": None,
     "posttest_df": None,
     "treatment_state": None,
@@ -83,7 +82,7 @@ def reset_all():
 
 
 # =========================
-# SMALL UI HELPERS
+# UI HELPERS
 # =========================
 def render_header():
     st.title("CT Adaptive Learning")
@@ -149,7 +148,7 @@ if st.session_state["stage"] == "identitas":
     st.subheader("Isi Identitas Siswa")
 
     with st.container(border=True):
-        st.write("Silakan isi data diri terlebih dahulu sebelum memulai pretest.")
+        st.write("Silakan isi data diri terlebih dahulu sebelum memulai pembelajaran.")
 
         with st.form("form_identitas"):
             c1, c2, c3 = st.columns(3)
@@ -160,7 +159,7 @@ if st.session_state["stage"] == "identitas":
             with c3:
                 student_class = st.text_input("Kelas")
 
-            submitted = st.form_submit_button("Mulai Pretest", type="primary")
+            submitted = st.form_submit_button("Mulai", type="primary")
 
     if submitted:
         if not student_id.strip():
@@ -175,76 +174,68 @@ if st.session_state["stage"] == "identitas":
         posttest_df = get_phase_questions(bank, "posttest")
 
         if pretest_df.empty:
-            st.error("Soal pretest tidak ditemukan di Bank_Soal.")
+            st.error("Soal pretest tidak ditemukan di bank_soal.")
             st.stop()
 
         if posttest_df.empty:
-            st.error("Soal posttest tidak ditemukan di Bank_Soal.")
+            st.error("Soal posttest tidak ditemukan di bank_soal.")
             st.stop()
 
-        # cek apakah siswa sudah pernah menyelesaikan pretest
-        existing_pretest = None
         try:
-            pretest_saved_df = load_pretest_siswa(conn)
-            existing_pretest = find_existing_pretest(
-                pretest_saved_df,
-                student_id.strip(),
-                student_name.strip()
+            siswa_row = get_or_create_siswa(
+                nis=student_id.strip(),
+                nama=student_name.strip(),
+                kelas=student_class.strip()
             )
-        except Exception as e:
-            st.warning(f"Gagal memeriksa data pretest sebelumnya: {e}")
 
-        # kalau ditemukan pretest lama, skip pretest
-        if existing_pretest is not None:
-            scores = {
-                "D": int(existing_pretest["D_score"]),
-                "P": int(existing_pretest["P_score"]),
-                "A": int(existing_pretest["A_score"]),
-                "Alg": int(existing_pretest["Alg_score"])
-            }
+            session_row = get_or_create_active_session(siswa_row["id"])
 
-            st.session_state["student_profile"] = {
-                "student_id": str(existing_pretest["NIS"]).strip(),
-                "student_name": str(existing_pretest["nama"]).strip(),
-                "student_class": str(existing_pretest["kelas"]).strip(),
-                "scores": scores,
-                "total": int(existing_pretest["total_score"]),
-                "overall": str(existing_pretest["prediksi_ml"]).strip(),
-                "weak_indicator": str(existing_pretest["weakest_indicator"]).strip(),
-                "needs": [k for k, v in scores.items() if v < 7]
-            }
-
+            st.session_state["siswa_row"] = siswa_row
+            st.session_state["session_row"] = session_row
             st.session_state["pretest_df"] = pretest_df
             st.session_state["posttest_df"] = posttest_df
             st.session_state["pretest_answers"] = {}
             st.session_state["posttest_answers"] = {}
-            st.session_state["treatment_state"] = init_treatment_state(scores)
             st.session_state["current_question"] = None
             st.session_state["final_result"] = None
             st.session_state["saved_to_db"] = False
-            st.session_state["treatment_status"] = "selesai"
-            st.session_state["stage"] = "hasil_pretest"
 
-            st.success("Data pretest sebelumnya ditemukan. Kamu bisa melanjutkan ke treatment.")
+            status_session = session_row.get("status_session", "pretest")
+
+            # kalau ada sesi aktif lama, restore
+            if status_session != "pretest":
+                profile = restore_student_profile_from_session(siswa_row, session_row)
+                treatment_state = restore_treatment_state_from_session(session_row)
+
+                st.session_state["student_profile"] = profile
+                st.session_state["treatment_state"] = treatment_state
+                st.session_state["treatment_status"] = session_row.get("treatment_status", "selesai")
+
+                if status_session == "treatment":
+                    st.session_state["stage"] = "treatment"
+                    st.success("Progress sebelumnya ditemukan. Kamu bisa melanjutkan treatment.")
+                elif status_session == "posttest":
+                    st.session_state["stage"] = "posttest"
+                    st.success("Progress sebelumnya ditemukan. Kamu bisa melanjutkan posttest.")
+                else:
+                    st.session_state["stage"] = "pretest"
+
+                st.rerun()
+
+            # sesi baru -> mulai dari pretest
+            st.session_state["student_profile"] = {
+                "student_id": student_id.strip(),
+                "student_name": student_name.strip(),
+                "student_class": student_class.strip()
+            }
+            st.session_state["treatment_state"] = None
+            st.session_state["treatment_status"] = "belum_mulai"
+            st.session_state["stage"] = "pretest"
             st.rerun()
 
-        # kalau belum ada, lanjut normal ke pretest
-        st.session_state["student_profile"] = {
-            "student_id": student_id.strip(),
-            "student_name": student_name.strip(),
-            "student_class": student_class.strip()
-        }
-        st.session_state["pretest_df"] = pretest_df
-        st.session_state["posttest_df"] = posttest_df
-        st.session_state["pretest_answers"] = {}
-        st.session_state["posttest_answers"] = {}
-        st.session_state["treatment_state"] = None
-        st.session_state["current_question"] = None
-        st.session_state["final_result"] = None
-        st.session_state["saved_to_db"] = False
-        st.session_state["treatment_status"] = "selesai"
-        st.session_state["stage"] = "pretest"
-        st.rerun()
+        except Exception as e:
+            st.error(f"Gagal menyiapkan data siswa/session: {e}")
+
 
 # =========================
 # STAGE 2: PRETEST
@@ -313,18 +304,25 @@ elif st.session_state["stage"] == "pretest":
             "needs": needs
         })
 
-        # simpan hasil pretest ke sheet Pretest_Siswa
-        try:
-            pretest_row = build_pretest_row(st.session_state["student_profile"])
-            save_pretest_result(conn, pretest_row)
-        except Exception as e:
-            st.warning(f"Hasil pretest belum berhasil disimpan ke Pretest_Siswa: {e}")
-
-        st.session_state["treatment_state"] = init_treatment_state(scores)
+        treatment_state = init_treatment_state(scores)
+        st.session_state["treatment_state"] = treatment_state
         st.session_state["current_question"] = None
-        st.session_state["treatment_status"] = "selesai"
+        st.session_state["treatment_status"] = "berjalan"
+
+        try:
+            updated_session = update_session_after_pretest(
+                session_id=st.session_state["session_row"]["id"],
+                profile=st.session_state["student_profile"],
+                treatment_state=treatment_state
+            )
+            st.session_state["session_row"] = updated_session
+        except Exception as e:
+            st.error(f"Gagal menyimpan hasil pretest ke Supabase: {e}")
+            st.stop()
+
         st.session_state["stage"] = "hasil_pretest"
         st.rerun()
+
 
 # =========================
 # STAGE 3: HASIL PRETEST
@@ -363,6 +361,7 @@ elif st.session_state["stage"] == "hasil_pretest":
         st.session_state["stage"] = "treatment"
         st.rerun()
 
+
 # =========================
 # STAGE 4: TREATMENT
 # =========================
@@ -376,7 +375,7 @@ elif st.session_state["stage"] == "treatment":
         state["answered_count"] = 0
 
     st.subheader("Treatment Adaptif")
-    st.write("Kerjakan soal treatment berikut. Jika waktu treatment habis, guru dapat mengarahkan untuk melewati tahap ini.")
+    st.write("Kerjakan soal treatment berikut. Progres akan tersimpan agar bisa dilanjutkan kembali.")
 
     if state["project_ready"]:
         st.success("Treatment selesai. Kamu bisa lanjut ke posttest.")
@@ -392,7 +391,7 @@ elif st.session_state["stage"] == "treatment":
     q = st.session_state["current_question"]
 
     if q is None:
-        st.error("Tidak ada soal treatment yang cocok di Bank_Soal.")
+        st.error("Tidak ada soal treatment yang cocok di bank_soal.")
         st.stop()
 
     c1, c2, c3 = st.columns(3)
@@ -456,13 +455,38 @@ elif st.session_state["stage"] == "treatment":
 
             st.session_state["treatment_state"] = state
             st.session_state["current_question"] = None
+            st.session_state["treatment_status"] = "berjalan"
+
+            try:
+                updated_session = update_session_treatment_progress(
+                    session_id=st.session_state["session_row"]["id"],
+                    state=state,
+                    treatment_status="berjalan"
+                )
+                st.session_state["session_row"] = updated_session
+            except Exception as e:
+                st.error(f"Gagal menyimpan progress treatment: {e}")
+                st.stop()
+
             st.rerun()
 
     with c2:
         if st.button("Lewati Treatment", use_container_width=True):
             st.session_state["treatment_status"] = "skip"
+
+            try:
+                updated_session = mark_session_skip_treatment(
+                    session_id=st.session_state["session_row"]["id"],
+                    state=state
+                )
+                st.session_state["session_row"] = updated_session
+            except Exception as e:
+                st.error(f"Gagal menandai skip treatment: {e}")
+                st.stop()
+
             st.session_state["stage"] = "posttest"
             st.rerun()
+
 
 # =========================
 # STAGE 5: POSTTEST
@@ -524,21 +548,21 @@ elif st.session_state["stage"] == "posttest":
             st.session_state["posttest_answers"]
         )
 
-        result_row = build_result_row(
-            profile=st.session_state["student_profile"],
-            treatment_state=st.session_state["treatment_state"],
-            posttest_score=posttest_score,
-            treatment_status=st.session_state.get("treatment_status", "selesai")
-        )
-
         try:
-            saved_row = save_student_result(conn, result_row)
+            saved_row = update_session_final(
+                session_id=st.session_state["session_row"]["id"],
+                profile=st.session_state["student_profile"],
+                treatment_state=st.session_state["treatment_state"],
+                posttest_score=posttest_score,
+                treatment_status=st.session_state.get("treatment_status", "selesai")
+            )
             st.session_state["final_result"] = saved_row
             st.session_state["saved_to_db"] = True
             st.session_state["stage"] = "final"
             st.rerun()
         except Exception as e:
-            st.error(f"Gagal menyimpan ke Data_Siswa: {e}")
+            st.error(f"Gagal menyimpan hasil akhir ke Supabase: {e}")
+
 
 # =========================
 # STAGE 6: FINAL
