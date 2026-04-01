@@ -108,6 +108,7 @@ def load_bank_soal(_conn) -> pd.DataFrame:
         return x
 
     df["ct"] = df["ct"].apply(normalize_ct)
+
     return df
 
 
@@ -408,33 +409,23 @@ def build_pretest_row(profile: dict) -> dict:
 def save_pretest_result(conn, pretest_row: dict):
     row_to_save = pretest_row.copy()
 
-    # coba append dulu
-    try:
-        row_df = pd.DataFrame([row_to_save])
-        conn.write(
-            worksheet="Pretest_Siswa",
-            data=row_df,
-            append=True
-        )
-        load_pretest_siswa.clear()
-        return row_to_save
+    old_df = load_pretest_siswa(conn)
 
-    # kalau append gagal, fallback ke read + update
-    except Exception:
-        old_df = load_pretest_siswa(conn)
+    for col in PRETEST_SISWA_COLUMNS:
+        if col not in old_df.columns:
+            old_df[col] = ""
 
-        for col in PRETEST_SISWA_COLUMNS:
-            if col not in old_df.columns:
-                old_df[col] = ""
+    new_df = pd.concat(
+        [old_df[PRETEST_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
+        ignore_index=True
+    )
 
-        new_df = pd.concat(
-            [old_df[PRETEST_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
-            ignore_index=True
-        )
+    time.sleep(0.3)
 
-        conn.update(worksheet="Pretest_Siswa", data=new_df)
-        load_pretest_siswa.clear()
-        return row_to_save
+    conn.update(worksheet="Pretest_Siswa", data=new_df)
+
+    load_pretest_siswa.clear()
+    return row_to_save
 
 
 # =========================
@@ -509,13 +500,20 @@ def save_student_result(conn, result_row: dict):
     row_to_save = result_row.copy()
     row_to_save["record_id"] = generate_record_id()
 
-    new_row_df = pd.DataFrame([row_to_save])
+    old_df = load_data_siswa(conn)
 
-    conn.write(
-        worksheet="Data_Siswa",
-        data=new_row_df,
-        append=True
+    for col in DATA_SISWA_COLUMNS:
+        if col not in old_df.columns:
+            old_df[col] = ""
+
+    new_df = pd.concat(
+        [old_df[DATA_SISWA_COLUMNS], pd.DataFrame([row_to_save])],
+        ignore_index=True
     )
+
+    time.sleep(0.3)
+
+    conn.update(worksheet="Data_Siswa", data=new_df)
 
     load_data_siswa.clear()
     return row_to_save
