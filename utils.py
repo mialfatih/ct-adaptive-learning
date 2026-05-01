@@ -183,6 +183,188 @@ def calculate_posttest_score(posttest_df: pd.DataFrame, answers_dict: dict) -> i
 
     return int(score)
 
+# =========================
+# ITEM-LEVEL ANSWER HELPERS
+# =========================
+
+def build_answer_rows(
+    df_questions: pd.DataFrame,
+    answers_dict: dict,
+    session_row: dict,
+    siswa_row: dict,
+    phase: str
+) -> list:
+    """
+    Membuat data jawaban per soal untuk disimpan ke tabel jawaban_siswa.
+
+    score_binary:
+    - benar = 1
+    - salah = 0
+    Dipakai untuk uji validitas, reliabilitas, daya pembeda, tingkat kesukaran.
+
+    score_weighted:
+    - easy = 1
+    - medium = 2
+    - hard = 3
+    Dipakai untuk skor sistem CT.
+    """
+    rows = []
+    phase = str(phase).strip().lower()
+
+    for idx, row in df_questions.reset_index(drop=True).iterrows():
+        qid = str(row["id"]).strip()
+        selected = str(answers_dict.get(qid, "")).strip().upper()
+        correct = str(row["answer"]).strip().upper()
+
+        is_correct = selected == correct
+        score_binary = 1 if is_correct else 0
+        score_weighted = get_weight(row["level"]) if is_correct else 0
+
+        rows.append({
+            "session_id": session_row["id"],
+            "siswa_id": siswa_row["id"],
+
+            "nis": str(siswa_row.get("nis", "")).strip(),
+            "nama": str(siswa_row.get("nama", "")).strip(),
+            "kelas": str(siswa_row.get("kelas", "")).strip(),
+
+            "phase": phase,
+            "question_id": qid,
+            "ct": str(row.get("ct", "")).strip(),
+            "level": str(row.get("level", "")).strip().lower(),
+            "materi": str(row.get("materi", "")).strip(),
+
+            "selected_answer": selected,
+            "correct_answer": correct,
+            "is_correct": is_correct,
+
+            "score_binary": score_binary,
+            "score_weighted": score_weighted,
+
+            "attempt_order": idx + 1
+        })
+
+    return rows
+
+
+def save_answer_rows(rows: list) -> None:
+    """
+    Menyimpan banyak jawaban sekaligus ke tabel jawaban_siswa.
+    Dipakai untuk pretest dan posttest.
+    """
+    if not rows:
+        return
+
+    supabase = get_supabase()
+
+    response = (
+        supabase
+        .table("jawaban_siswa")
+        .insert(rows)
+        .execute()
+    )
+
+    if response.data is None:
+        raise ValueError("Gagal menyimpan jawaban siswa.")
+
+
+def delete_existing_answers(session_id: str, phase: str) -> None:
+    """
+    Menghapus jawaban lama pada session dan phase tertentu.
+    Berguna kalau submit ulang atau ada proses testing.
+    """
+    supabase = get_supabase()
+
+    (
+        supabase
+        .table("jawaban_siswa")
+        .delete()
+        .eq("session_id", session_id)
+        .eq("phase", phase)
+        .execute()
+    )
+
+
+def save_phase_answers(
+    df_questions: pd.DataFrame,
+    answers_dict: dict,
+    session_row: dict,
+    siswa_row: dict,
+    phase: str,
+    replace_existing: bool = True
+) -> None:
+    """
+    Fungsi utama untuk menyimpan jawaban pretest/posttest per soal.
+    """
+    phase = str(phase).strip().lower()
+
+    if replace_existing:
+        delete_existing_answers(session_row["id"], phase)
+
+    rows = build_answer_rows(
+        df_questions=df_questions,
+        answers_dict=answers_dict,
+        session_row=session_row,
+        siswa_row=siswa_row,
+        phase=phase
+    )
+
+    save_answer_rows(rows)
+
+
+def save_treatment_answer(
+    session_row: dict,
+    siswa_row: dict,
+    question_row: pd.Series,
+    selected_answer: str,
+    attempt_order: int
+) -> None:
+    """
+    Menyimpan jawaban treatment per soal.
+    Dipakai setiap siswa submit satu soal treatment.
+    """
+    selected = str(selected_answer).strip().upper()
+    correct = str(question_row["answer"]).strip().upper()
+
+    is_correct = selected == correct
+    score_binary = 1 if is_correct else 0
+    score_weighted = get_weight(question_row["level"]) if is_correct else 0
+
+    payload = {
+        "session_id": session_row["id"],
+        "siswa_id": siswa_row["id"],
+
+        "nis": str(siswa_row.get("nis", "")).strip(),
+        "nama": str(siswa_row.get("nama", "")).strip(),
+        "kelas": str(siswa_row.get("kelas", "")).strip(),
+
+        "phase": "treatment",
+        "question_id": str(question_row["id"]).strip(),
+        "ct": str(question_row.get("ct", "")).strip(),
+        "level": str(question_row.get("level", "")).strip().lower(),
+        "materi": str(question_row.get("materi", "")).strip(),
+
+        "selected_answer": selected,
+        "correct_answer": correct,
+        "is_correct": is_correct,
+
+        "score_binary": score_binary,
+        "score_weighted": score_weighted,
+
+        "attempt_order": int(attempt_order)
+    }
+
+    supabase = get_supabase()
+
+    response = (
+        supabase
+        .table("jawaban_siswa")
+        .insert(payload)
+        .execute()
+    )
+
+    if response.data is None:
+        raise ValueError("Gagal menyimpan jawaban treatment.")
 
 def predict_overall_level(model, D: int, P: int, A: int, Alg: int) -> str:
     X_new = np.array([[D, P, A, Alg]], dtype=int)
