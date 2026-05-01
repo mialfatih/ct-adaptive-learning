@@ -21,6 +21,8 @@ from utils import (
     update_session_final,
     restore_student_profile_from_session,
     restore_treatment_state_from_session,
+    save_phase_answers,
+    save_treatment_answer,
 )
 
 # =========================
@@ -316,6 +318,15 @@ elif st.session_state["stage"] == "pretest":
                 treatment_state=treatment_state
             )
             st.session_state["session_row"] = updated_session
+
+            save_phase_answers(
+                df_questions=pretest_df,
+                answers_dict=st.session_state["pretest_answers"],
+                session_row=updated_session,
+                siswa_row=st.session_state["siswa_row"],
+                phase="pretest",
+                replace_existing=True
+            )
         except Exception as e:
             st.error(f"Gagal menyimpan hasil pretest ke Supabase: {e}")
             st.stop()
@@ -430,6 +441,18 @@ elif st.session_state["stage"] == "treatment":
             correct = (choice == q["answer"])
 
             state["answered_count"] = state.get("answered_count", 0) + 1
+
+            try:
+                save_treatment_answer(
+                    session_row=st.session_state["session_row"],
+                    siswa_row=st.session_state["siswa_row"],
+                    question_row=q,
+                    selected_answer=choice,
+                    attempt_order=state.get("answered_count", 0)
+                )
+            except Exception as e:
+                st.error(f"Gagal menyimpan jawaban treatment: {e}")
+                st.stop()
 
             if q["id"] not in state["history_ids"]:
                 state["history_ids"].append(q["id"])
@@ -549,6 +572,15 @@ elif st.session_state["stage"] == "posttest":
         )
 
         try:
+            save_phase_answers(
+                df_questions=posttest_df,
+                answers_dict=st.session_state["posttest_answers"],
+                session_row=st.session_state["session_row"],
+                siswa_row=st.session_state["siswa_row"],
+                phase="posttest",
+                replace_existing=True
+            )
+        
             saved_row = update_session_final(
                 session_id=st.session_state["session_row"]["id"],
                 profile=st.session_state["student_profile"],
@@ -556,6 +588,14 @@ elif st.session_state["stage"] == "posttest":
                 posttest_score=posttest_score,
                 treatment_status=st.session_state.get("treatment_status", "selesai")
             )
+        
+            st.session_state["final_result"] = saved_row
+            st.session_state["saved_to_db"] = True
+            st.session_state["stage"] = "final"
+            st.rerun()
+        
+        except Exception as e:
+            st.error(f"Gagal menyimpan hasil akhir ke Supabase: {e}")
             st.session_state["final_result"] = saved_row
             st.session_state["saved_to_db"] = True
             st.session_state["stage"] = "final"
