@@ -3,76 +3,40 @@ import streamlit as st
 
 from utils import get_supabase
 
-st.set_page_config(page_title="Dashboard Monitoring Siswa", layout="wide")
-
-# =========================
-# STYLE
-# =========================
-st.markdown(
-    """
-    <style>
-    .main-card {
-        padding: 1rem 1.2rem;
-        border-radius: 18px;
-        border: 1px solid rgba(200,200,200,0.18);
-        background: rgba(255,255,255,0.03);
-        margin-bottom: 1rem;
-    }
-    .small-muted {
-        font-size: 0.85rem;
-        opacity: 0.8;
-    }
-    .student-card {
-        padding: 0.9rem 1rem;
-        border-radius: 16px;
-        border: 1px solid rgba(200,200,200,0.15);
-        background: rgba(255,255,255,0.03);
-        margin-bottom: 0.8rem;
-    }
-    .status-pill {
-        display: inline-block;
-        padding: 0.25rem 0.65rem;
-        border-radius: 999px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        margin-top: 0.3rem;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.set_page_config(page_title="Monitoring CT Adaptive", layout="wide")
 
 st.title("Dashboard Monitoring Siswa")
-st.caption("Monitoring progres pretest, treatment, dan posttest berbasis Supabase")
+st.caption("Monitoring progres pretest, treatment, posttest, dan export data uji instrumen")
 
 # =========================
 # DATA LOAD
 # =========================
-@st.cache_data(ttl=20)
-def load_monitoring_data():
+@st.cache_data(ttl=15)
+def load_data():
     supabase = get_supabase()
 
     siswa_res = supabase.table("siswa").select("*").execute()
     session_res = supabase.table("session_pembelajaran").select("*").execute()
+    jawaban_res = supabase.table("jawaban_siswa").select("*").execute()
 
     siswa_df = pd.DataFrame(siswa_res.data or [])
     session_df = pd.DataFrame(session_res.data or [])
+    jawaban_df = pd.DataFrame(jawaban_res.data or [])
 
     if siswa_df.empty:
-        siswa_df = pd.DataFrame(columns=["id", "nis", "nama", "kelas", "created_at", "updated_at"])
+        siswa_df = pd.DataFrame(columns=["id", "nis", "nama", "kelas"])
 
     if session_df.empty:
         session_df = pd.DataFrame(columns=[
-            "id", "siswa_id", "status_session", "pretest_selesai", "posttest_selesai",
-            "treatment_status", "d_score", "p_score", "a_score", "alg_score", "total_score",
-            "weakest_indicator", "prediksi_ml", "answered_count", "current_ct", "current_level",
-            "points", "current_ct_idx", "priority_order_json", "start_level_map_json",
-            "mastered_ct_json", "history_ids_json", "served_items_json", "project_ready",
-            "posttest_score", "gain_score", "created_at", "updated_at", "finished_at"
+            "id", "siswa_id", "status_session", "treatment_status",
+            "d_score", "p_score", "a_score", "alg_score", "total_score",
+            "weakest_indicator", "prediksi_ml", "answered_count",
+            "current_ct", "current_level", "posttest_score", "gain_score",
+            "updated_at", "finished_at"
         ])
 
-    if not siswa_df.empty and not session_df.empty:
-        df = session_df.merge(
+    if not session_df.empty:
+        data = session_df.merge(
             siswa_df,
             left_on="siswa_id",
             right_on="id",
@@ -80,167 +44,115 @@ def load_monitoring_data():
             suffixes=("_session", "_siswa")
         )
     else:
-        df = session_df.copy()
+        data = session_df.copy()
 
-    return df
+    return data, jawaban_df
 
 
-def clean_text_series(series):
+def clean_text(series):
     return series.fillna("").astype(str).str.strip()
 
 
-def to_datetime_safe(series):
-    return pd.to_datetime(series, errors="coerce")
+def make_status(row):
+    status = str(row.get("status_session", "")).strip()
+    treatment = str(row.get("treatment_status", "")).strip()
 
-
-def make_status_label(row):
-    status_session = str(row.get("status_session", "")).strip()
-    treatment_status = str(row.get("treatment_status", "")).strip()
-
-    if status_session == "selesai":
+    if status == "selesai":
         return "Selesai"
-    if status_session == "posttest":
+    if status == "posttest":
         return "Posttest"
-    if status_session == "treatment":
-        if treatment_status == "skip":
-            return "Skip Treatment"
+    if status == "treatment" and treatment == "skip":
+        return "Skip Treatment"
+    if status == "treatment":
         return "Treatment"
-    if status_session == "pretest":
+    if status == "pretest":
         return "Pretest"
     return "Belum Mulai"
 
 
-def get_status_html(label: str):
-    label_lower = label.lower()
+def build_item_matrix(jawaban_df: pd.DataFrame, phase: str) -> pd.DataFrame:
+    """
+    Export format uji instrumen:
+    NIS | nama | kelas | Q1 | Q2 | ... | total_score
+    Isi Q = 1 benar, 0 salah.
+    """
+    if jawaban_df.empty:
+        return pd.DataFrame()
 
-    if "selesai" in label_lower:
-        bg = "rgba(34,197,94,0.18)"
-        fg = "#22c55e"
-    elif "posttest" in label_lower:
-        bg = "rgba(59,130,246,0.18)"
-        fg = "#60a5fa"
-    elif "skip" in label_lower:
-        bg = "rgba(245,158,11,0.18)"
-        fg = "#f59e0b"
-    elif "treatment" in label_lower:
-        bg = "rgba(168,85,247,0.18)"
-        fg = "#c084fc"
-    else:
-        bg = "rgba(156,163,175,0.18)"
-        fg = "#d1d5db"
+    df = jawaban_df[jawaban_df["phase"] == phase].copy()
 
-    return f'<span class="status-pill" style="background:{bg}; color:{fg};">{label}</span>'
+    if df.empty:
+        return pd.DataFrame()
+
+    df["question_id"] = df["question_id"].astype(str)
+    df["score_binary"] = pd.to_numeric(df["score_binary"], errors="coerce").fillna(0).astype(int)
+
+    matrix = df.pivot_table(
+        index=["nis", "nama", "kelas"],
+        columns="question_id",
+        values="score_binary",
+        aggfunc="first"
+    ).reset_index()
+
+    question_cols = [c for c in matrix.columns if c not in ["nis", "nama", "kelas"]]
+    question_cols = sorted(question_cols)
+
+    matrix = matrix[["nis", "nama", "kelas"] + question_cols]
+    matrix["total_score_binary"] = matrix[question_cols].sum(axis=1)
+
+    return matrix
 
 
-def get_clean_value_counts(series):
-    s = clean_text_series(series)
-    s = s[s != ""]
-    return s.value_counts()
-
-
-# =========================
-# LOAD
-# =========================
 try:
-    data = load_monitoring_data()
+    data, jawaban_df = load_data()
 except Exception as e:
     st.error(f"Gagal membaca data Supabase: {e}")
     st.stop()
 
 if data.empty:
-    st.warning("Belum ada data siswa / sesi pembelajaran.")
+    st.warning("Belum ada data siswa.")
     st.stop()
 
 # =========================
 # NORMALISASI
 # =========================
-text_cols = [
-    "nis", "nama", "kelas", "status_session", "treatment_status",
-    "prediksi_ml", "weakest_indicator", "current_ct", "current_level"
-]
-for col in text_cols:
+for col in ["nis", "nama", "kelas", "status_session", "treatment_status", "prediksi_ml", "weakest_indicator", "current_ct", "current_level"]:
     if col in data.columns:
-        data[col] = clean_text_series(data[col])
+        data[col] = clean_text(data[col])
 
-num_cols = [
-    "d_score", "p_score", "a_score", "alg_score",
-    "total_score", "answered_count", "points",
-    "posttest_score", "gain_score"
-]
-for col in num_cols:
+for col in ["d_score", "p_score", "a_score", "alg_score", "total_score", "answered_count", "posttest_score", "gain_score"]:
     if col in data.columns:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
+        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0).astype(int)
 
-for col in ["created_at_session", "updated_at_session", "finished_at"]:
-    if col in data.columns:
-        data[f"{col}_dt"] = to_datetime_safe(data[col])
+data["status_label"] = data.apply(make_status, axis=1)
 
-if "updated_at" in data.columns and "updated_at_dt" not in data.columns:
-    data["updated_at_dt"] = to_datetime_safe(data["updated_at"])
-
-data["status_label"] = data.apply(make_status_label, axis=1)
-
-# =========================
-# HEADER SUMMARY
-# =========================
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
-st.subheader("Ringkasan Monitoring")
-
-total_siswa = data["siswa_id"].nunique() if "siswa_id" in data.columns else 0
-total_session = len(data)
-sedang_aktif = len(data[data["status_session"] != "selesai"]) if "status_session" in data.columns else 0
-sudah_selesai = len(data[data["status_session"] == "selesai"]) if "status_session" in data.columns else 0
-
-m1, m2, m3, m4 = st.columns(4)
-with m1:
-    st.metric("Total Siswa", total_siswa)
-with m2:
-    st.metric("Total Session", total_session)
-with m3:
-    st.metric("Sedang Aktif", sedang_aktif)
-with m4:
-    st.metric("Selesai", sudah_selesai)
-
-st.markdown("</div>", unsafe_allow_html=True)
+if "updated_at" in data.columns:
+    data["updated_at_dt"] = pd.to_datetime(data["updated_at"], errors="coerce")
+else:
+    data["updated_at_dt"] = pd.NaT
 
 # =========================
 # FILTER
 # =========================
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
-st.subheader("Filter dan Pencarian")
+with st.container(border=True):
+    st.subheader("Filter")
 
-c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
 
-with c1:
-    kelas_options = ["Semua"]
-    if "kelas" in data.columns:
-        kelas_values = clean_text_series(data["kelas"])
-        kelas_options += sorted([x for x in kelas_values.unique().tolist() if x != ""])
-    kelas_filter = st.selectbox("Filter Kelas", kelas_options)
+    with c1:
+        kelas_list = ["Semua"] + sorted([x for x in data["kelas"].dropna().unique().tolist() if x])
+        kelas_filter = st.selectbox("Kelas", kelas_list)
 
-with c2:
-    status_options = ["Semua"]
-    if "status_label" in data.columns:
-        status_values = clean_text_series(data["status_label"])
-        status_options += sorted([x for x in status_values.unique().tolist() if x != ""])
-    status_filter = st.selectbox("Filter Status", status_options)
+    with c2:
+        status_list = ["Semua"] + sorted([x for x in data["status_label"].dropna().unique().tolist() if x])
+        status_filter = st.selectbox("Status", status_list)
 
-with c3:
-    prediksi_options = ["Semua"]
-    if "prediksi_ml" in data.columns:
-        pred_values = clean_text_series(data["prediksi_ml"])
-        prediksi_options += sorted([x for x in pred_values.unique().tolist() if x != ""])
-    prediksi_filter = st.selectbox("Filter Prediksi ML", prediksi_options)
+    with c3:
+        pred_list = ["Semua"] + sorted([x for x in data["prediksi_ml"].dropna().unique().tolist() if x])
+        pred_filter = st.selectbox("Prediksi ML", pred_list)
 
-with c4:
-    treatment_options = ["Semua"]
-    if "treatment_status" in data.columns:
-        treatment_values = clean_text_series(data["treatment_status"])
-        treatment_options += sorted([x for x in treatment_values.unique().tolist() if x != ""])
-    treatment_filter = st.selectbox("Filter Treatment", treatment_options)
-
-keyword = st.text_input("Cari berdasarkan NIS atau Nama", value="").strip().lower()
-st.markdown("</div>", unsafe_allow_html=True)
+    with c4:
+        keyword = st.text_input("Cari NIS / Nama", "")
 
 filtered = data.copy()
 
@@ -250,212 +162,179 @@ if kelas_filter != "Semua":
 if status_filter != "Semua":
     filtered = filtered[filtered["status_label"] == status_filter]
 
-if prediksi_filter != "Semua":
-    filtered = filtered[filtered["prediksi_ml"] == prediksi_filter]
+if pred_filter != "Semua":
+    filtered = filtered[filtered["prediksi_ml"] == pred_filter]
 
-if treatment_filter != "Semua":
-    filtered = filtered[filtered["treatment_status"] == treatment_filter]
-
-if keyword:
+if keyword.strip():
+    key = keyword.strip().lower()
     filtered = filtered[
-        filtered["nis"].str.lower().str.contains(keyword, na=False) |
-        filtered["nama"].str.lower().str.contains(keyword, na=False)
+        filtered["nis"].str.lower().str.contains(key, na=False) |
+        filtered["nama"].str.lower().str.contains(key, na=False)
     ]
 
 # =========================
-# LIVE OVERVIEW
+# RINGKASAN
 # =========================
-left, right = st.columns([1.2, 1])
+total_siswa = filtered["siswa_id"].nunique() if "siswa_id" in filtered.columns else len(filtered)
+pretest_count = len(filtered[filtered["status_label"] == "Pretest"])
+treatment_count = len(filtered[filtered["status_label"] == "Treatment"])
+posttest_count = len(filtered[filtered["status_label"] == "Posttest"])
+selesai_count = len(filtered[filtered["status_label"] == "Selesai"])
 
-with left:
-    st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.subheader("Status Siswa Saat Ini")
-
-    status_counts = get_clean_value_counts(filtered["status_label"])
-    if len(status_counts) > 0:
-        st.bar_chart(status_counts)
-    else:
-        st.info("Belum ada data status.")
-    st.markdown("</div>", unsafe_allow_html=True)
-
-with right:
-    st.markdown('<div class="main-card">', unsafe_allow_html=True)
-    st.subheader("Distribusi Prediksi CT")
-
-    pred_counts = get_clean_value_counts(filtered["prediksi_ml"])
-    if len(pred_counts) > 0:
-        st.bar_chart(pred_counts)
-    else:
-        st.info("Belum ada data prediksi.")
-    st.markdown("</div>", unsafe_allow_html=True)
+m1, m2, m3, m4, m5 = st.columns(5)
+m1.metric("Total Siswa", total_siswa)
+m2.metric("Pretest", pretest_count)
+m3.metric("Treatment", treatment_count)
+m4.metric("Posttest", posttest_count)
+m5.metric("Selesai", selesai_count)
 
 # =========================
-# LEADERBOARD
+# MONITORING UTAMA
 # =========================
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
-st.subheader("Leaderboard Hasil Akhir")
+st.subheader("Monitoring Siswa")
 
-leaderboard = filtered.copy()
-
-if "posttest_score" in leaderboard.columns:
-    leaderboard = leaderboard.sort_values(
-        by=["posttest_score", "gain_score"],
-        ascending=[False, False],
-        na_position="last"
-    )
-
-leaderboard_display = leaderboard[[
-    "nis",
-    "nama",
-    "kelas",
-    "prediksi_ml",
-    "total_score",
-    "posttest_score",
-    "gain_score",
-    "status_label"
-]].copy()
-
-leaderboard_display.columns = [
-    "NIS",
-    "Nama",
-    "Kelas",
-    "Prediksi ML",
-    "Pretest",
-    "Posttest",
-    "Gain",
-    "Status"
+monitor_cols = [
+    "nis", "nama", "kelas", "status_label",
+    "prediksi_ml", "weakest_indicator",
+    "total_score", "answered_count",
+    "current_ct", "current_level",
+    "posttest_score", "gain_score", "updated_at"
 ]
 
-st.dataframe(leaderboard_display.head(10), use_container_width=True, hide_index=True)
-st.markdown("</div>", unsafe_allow_html=True)
-
-# =========================
-# KARTU MONITORING SISWA
-# =========================
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
-st.subheader("Monitoring Per Siswa")
-
-if "updated_at_dt" in filtered.columns:
-    filtered_cards = filtered.sort_values("updated_at_dt", ascending=False, na_position="last")
-else:
-    filtered_cards = filtered.copy()
-
-if filtered_cards.empty:
-    st.info("Tidak ada data sesuai filter.")
-else:
-    max_cards = min(len(filtered_cards), 30)
-
-    for _, row in filtered_cards.head(max_cards).iterrows():
-        nama = row.get("nama", "-")
-        nis = row.get("nis", "-")
-        kelas = row.get("kelas", "-")
-        status_label = row.get("status_label", "-")
-        prediksi = row.get("prediksi_ml", "-")
-        weakest = row.get("weakest_indicator", "-")
-        current_ct = row.get("current_ct", "-")
-        current_level = row.get("current_level", "-")
-        answered_count = row.get("answered_count", 0)
-        total_score = row.get("total_score", 0)
-        posttest_score = row.get("posttest_score", 0)
-        gain_score = row.get("gain_score", 0)
-
-        with st.container():
-            st.markdown('<div class="student-card">', unsafe_allow_html=True)
-            c1, c2, c3 = st.columns([2, 1.2, 1.2])
-
-            with c1:
-                st.markdown(f"**{nama}**")
-                st.markdown(f'<div class="small-muted">NIS: {nis} | Kelas: {kelas}</div>', unsafe_allow_html=True)
-                st.markdown(get_status_html(status_label), unsafe_allow_html=True)
-
-            with c2:
-                st.write(f"**Prediksi:** {prediksi if prediksi else '-'}")
-                st.write(f"**Weakest:** {weakest if weakest else '-'}")
-                st.write(f"**Soal Treatment:** {int(answered_count) if pd.notna(answered_count) else 0}")
-
-            with c3:
-                st.write(f"**CT Saat Ini:** {current_ct if current_ct else '-'}")
-                st.write(f"**Level Saat Ini:** {str(current_level).capitalize() if current_level else '-'}")
-                st.write(f"**Gain:** {int(gain_score) if pd.notna(gain_score) else 0}")
-
-            mc1, mc2, mc3 = st.columns(3)
-            with mc1:
-                st.metric("Pretest", int(total_score) if pd.notna(total_score) else 0)
-            with mc2:
-                st.metric("Posttest", int(posttest_score) if pd.notna(posttest_score) else 0)
-            with mc3:
-                st.metric("Progress Treatment", int(answered_count) if pd.notna(answered_count) else 0)
-
-            st.markdown('</div>', unsafe_allow_html=True)
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# =========================
-# TABEL DETAIL
-# =========================
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
-st.subheader("Tabel Detail Session")
-
-detail_columns = [
-    "nis",
-    "nama",
-    "kelas",
-    "status_label",
-    "prediksi_ml",
-    "weakest_indicator",
-    "d_score",
-    "p_score",
-    "a_score",
-    "alg_score",
-    "total_score",
-    "current_ct",
-    "current_level",
-    "answered_count",
-    "posttest_score",
-    "gain_score",
-    "updated_at"
-]
-
-existing_detail_columns = [col for col in detail_columns if col in filtered.columns]
-detail_df = filtered[existing_detail_columns].copy()
+existing_cols = [c for c in monitor_cols if c in filtered.columns]
+monitor_df = filtered[existing_cols].copy()
 
 rename_map = {
     "nis": "NIS",
     "nama": "Nama",
     "kelas": "Kelas",
     "status_label": "Status",
-    "prediksi_ml": "Prediksi ML",
+    "prediksi_ml": "ML",
     "weakest_indicator": "Weakest",
-    "d_score": "D",
-    "p_score": "P",
-    "a_score": "A",
-    "alg_score": "Alg",
     "total_score": "Pretest",
-    "current_ct": "CT Saat Ini",
-    "current_level": "Level Saat Ini",
-    "answered_count": "Jumlah Treatment",
+    "answered_count": "Treatment",
+    "current_ct": "CT",
+    "current_level": "Level",
     "posttest_score": "Posttest",
     "gain_score": "Gain",
-    "updated_at": "Last Update"
+    "updated_at": "Update"
 }
-detail_df = detail_df.rename(columns=rename_map)
 
-st.dataframe(detail_df, use_container_width=True, hide_index=True)
-st.markdown("</div>", unsafe_allow_html=True)
+monitor_df = monitor_df.rename(columns=rename_map)
+
+if "Update" in monitor_df.columns:
+    monitor_df = monitor_df.sort_values("Update", ascending=False, na_position="last")
+
+st.dataframe(
+    monitor_df,
+    use_container_width=True,
+    hide_index=True,
+    height=520
+)
+
+# =========================
+# RINGKASAN DISTRIBUSI RINGKAS
+# =========================
+with st.expander("Lihat Ringkasan Distribusi"):
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.write("**Status**")
+        st.dataframe(
+            filtered["status_label"].value_counts().reset_index().rename(
+                columns={"status_label": "Jumlah", "index": "Status"}
+            ),
+            hide_index=True,
+            use_container_width=True
+        )
+
+    with c2:
+        st.write("**Prediksi ML**")
+        st.dataframe(
+            filtered["prediksi_ml"].replace("", "-").value_counts().reset_index().rename(
+                columns={"prediksi_ml": "Jumlah", "index": "Prediksi"}
+            ),
+            hide_index=True,
+            use_container_width=True
+        )
+
+    with c3:
+        st.write("**Weakest Indicator**")
+        st.dataframe(
+            filtered["weakest_indicator"].replace("", "-").value_counts().reset_index().rename(
+                columns={"weakest_indicator": "Jumlah", "index": "Weakest"}
+            ),
+            hide_index=True,
+            use_container_width=True
+        )
 
 # =========================
 # EXPORT
 # =========================
-st.markdown('<div class="main-card">', unsafe_allow_html=True)
 st.subheader("Export Data")
 
-export_df = filtered.copy()
-csv_data = export_df.to_csv(index=False).encode("utf-8")
+tab1, tab2, tab3, tab4 = st.tabs([
+    "Monitoring",
+    "Pretest 0/1",
+    "Posttest 0/1",
+    "Jawaban Detail"
+])
 
-st.download_button(
-    label="Download CSV Monitoring",
-    data=csv_data,
-    file_name="monitoring_session_pembelajaran.csv",
-    mime="text/csv"
-)
-st.markdown("</div>", unsafe_allow_html=True)
+with tab1:
+    csv_monitor = filtered.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Download CSV Monitoring",
+        data=csv_monitor,
+        file_name="monitoring_siswa.csv",
+        mime="text/csv"
+    )
+
+with tab2:
+    pretest_matrix = build_item_matrix(jawaban_df, "pretest")
+    if pretest_matrix.empty:
+        st.info("Belum ada data jawaban pretest.")
+    else:
+        st.dataframe(pretest_matrix, use_container_width=True, hide_index=True)
+        csv_pretest = pretest_matrix.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV Pretest 0/1",
+            data=csv_pretest,
+            file_name="data_uji_instrumen_pretest.csv",
+            mime="text/csv"
+        )
+
+with tab3:
+    posttest_matrix = build_item_matrix(jawaban_df, "posttest")
+    if posttest_matrix.empty:
+        st.info("Belum ada data jawaban posttest.")
+    else:
+        st.dataframe(posttest_matrix, use_container_width=True, hide_index=True)
+        csv_posttest = posttest_matrix.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV Posttest 0/1",
+            data=csv_posttest,
+            file_name="data_uji_instrumen_posttest.csv",
+            mime="text/csv"
+        )
+
+with tab4:
+    if jawaban_df.empty:
+        st.info("Belum ada data jawaban detail.")
+    else:
+        show_cols = [
+            "nis", "nama", "kelas", "phase", "question_id",
+            "ct", "level", "selected_answer", "correct_answer",
+            "is_correct", "score_binary", "score_weighted", "attempt_order", "created_at"
+        ]
+        existing_show_cols = [c for c in show_cols if c in jawaban_df.columns]
+        detail = jawaban_df[existing_show_cols].copy()
+
+        st.dataframe(detail, use_container_width=True, hide_index=True, height=500)
+
+        csv_detail = detail.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "Download CSV Jawaban Detail",
+            data=csv_detail,
+            file_name="jawaban_siswa_detail.csv",
+            mime="text/csv"
+        )
