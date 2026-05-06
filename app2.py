@@ -8,20 +8,49 @@ st.set_page_config(page_title="Monitoring CT Adaptive", layout="wide")
 st.title("Dashboard Monitoring Siswa")
 st.caption("Monitoring progres pretest, treatment, posttest, dan export data uji instrumen")
 
+
+# =========================
+# FETCH ALL DATA SUPABASE
+# =========================
+def fetch_all_rows(table_name: str, page_size: int = 1000):
+    supabase = get_supabase()
+    all_rows = []
+    start = 0
+
+    while True:
+        end = start + page_size - 1
+
+        response = (
+            supabase
+            .table(table_name)
+            .select("*")
+            .range(start, end)
+            .execute()
+        )
+
+        rows = response.data or []
+        all_rows.extend(rows)
+
+        if len(rows) < page_size:
+            break
+
+        start += page_size
+
+    return all_rows
+
+
 # =========================
 # DATA LOAD
 # =========================
 @st.cache_data(ttl=15)
 def load_data():
-    supabase = get_supabase()
+    siswa_rows = fetch_all_rows("siswa")
+    session_rows = fetch_all_rows("session_pembelajaran")
+    jawaban_rows = fetch_all_rows("jawaban_siswa")
 
-    siswa_res = supabase.table("siswa").select("*").execute()
-    session_res = supabase.table("session_pembelajaran").select("*").execute()
-    jawaban_res = supabase.table("jawaban_siswa").select("*").execute()
-
-    siswa_df = pd.DataFrame(siswa_res.data or [])
-    session_df = pd.DataFrame(session_res.data or [])
-    jawaban_df = pd.DataFrame(jawaban_res.data or [])
+    siswa_df = pd.DataFrame(siswa_rows)
+    session_df = pd.DataFrame(session_rows)
+    jawaban_df = pd.DataFrame(jawaban_rows)
 
     if siswa_df.empty:
         siswa_df = pd.DataFrame(columns=["id", "nis", "nama", "kelas"])
@@ -33,6 +62,14 @@ def load_data():
             "weakest_indicator", "prediksi_ml", "answered_count",
             "current_ct", "current_level", "posttest_score", "gain_score",
             "updated_at", "finished_at"
+        ])
+
+    if jawaban_df.empty:
+        jawaban_df = pd.DataFrame(columns=[
+            "id", "session_id", "siswa_id", "nis", "nama", "kelas",
+            "phase", "question_id", "ct", "level", "materi",
+            "selected_answer", "correct_answer", "is_correct",
+            "score_binary", "score_weighted", "attempt_order", "created_at"
         ])
 
     if not session_df.empty:
@@ -49,6 +86,9 @@ def load_data():
     return data, jawaban_df
 
 
+# =========================
+# HELPERS
+# =========================
 def clean_text(series):
     return series.fillna("").astype(str).str.strip()
 
@@ -73,19 +113,26 @@ def make_status(row):
 def build_item_matrix(jawaban_df: pd.DataFrame, phase: str) -> pd.DataFrame:
     """
     Export format uji instrumen:
-    NIS | nama | kelas | Q1 | Q2 | ... | total_score
+    NIS | nama | kelas | Q1 | Q2 | ... | total_score_binary
     Isi Q = 1 benar, 0 salah.
     """
     if jawaban_df.empty:
         return pd.DataFrame()
 
-    df = jawaban_df[jawaban_df["phase"] == phase].copy()
+    if "phase" not in jawaban_df.columns:
+        return pd.DataFrame()
+
+    df = jawaban_df[jawaban_df["phase"].astype(str).str.lower() == phase].copy()
 
     if df.empty:
         return pd.DataFrame()
 
     df["question_id"] = df["question_id"].astype(str)
-    df["score_binary"] = pd.to_numeric(df["score_binary"], errors="coerce").fillna(0).astype(int)
+    df["score_binary"] = (
+        pd.to_numeric(df["score_binary"], errors="coerce")
+        .fillna(0)
+        .astype(int)
+    )
 
     matrix = df.pivot_table(
         index=["nis", "nama", "kelas"],
@@ -103,6 +150,19 @@ def build_item_matrix(jawaban_df: pd.DataFrame, phase: str) -> pd.DataFrame:
     return matrix
 
 
+def download_button_csv(label, df, file_name):
+    csv_data = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        label=label,
+        data=csv_data,
+        file_name=file_name,
+        mime="text/csv"
+    )
+
+
+# =========================
+# LOAD DATA
+# =========================
 try:
     data, jawaban_df = load_data()
 except Exception as e:
@@ -113,16 +173,31 @@ if data.empty:
     st.warning("Belum ada data siswa.")
     st.stop()
 
+
 # =========================
-# NORMALISASI
+# NORMALISASI DATA SESSION
 # =========================
-for col in ["nis", "nama", "kelas", "status_session", "treatment_status", "prediksi_ml", "weakest_indicator", "current_ct", "current_level"]:
+text_cols = [
+    "nis", "nama", "kelas", "status_session", "treatment_status",
+    "prediksi_ml", "weakest_indicator", "current_ct", "current_level"
+]
+
+for col in text_cols:
     if col in data.columns:
         data[col] = clean_text(data[col])
 
-for col in ["d_score", "p_score", "a_score", "alg_score", "total_score", "answered_count", "posttest_score", "gain_score"]:
+num_cols = [
+    "d_score", "p_score", "a_score", "alg_score",
+    "total_score", "answered_count", "posttest_score", "gain_score"
+]
+
+for col in num_cols:
     if col in data.columns:
-        data[col] = pd.to_numeric(data[col], errors="coerce").fillna(0).astype(int)
+        data[col] = (
+            pd.to_numeric(data[col], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
 
 data["status_label"] = data.apply(make_status, axis=1)
 
@@ -130,6 +205,23 @@ if "updated_at" in data.columns:
     data["updated_at_dt"] = pd.to_datetime(data["updated_at"], errors="coerce")
 else:
     data["updated_at_dt"] = pd.NaT
+
+
+# =========================
+# NORMALISASI JAWABAN
+# =========================
+if not jawaban_df.empty:
+    for col in ["nis", "nama", "kelas", "phase", "question_id", "ct", "level"]:
+        if col in jawaban_df.columns:
+            jawaban_df[col] = clean_text(jawaban_df[col])
+
+    if "score_binary" in jawaban_df.columns:
+        jawaban_df["score_binary"] = (
+            pd.to_numeric(jawaban_df["score_binary"], errors="coerce")
+            .fillna(0)
+            .astype(int)
+        )
+
 
 # =========================
 # FILTER
@@ -140,19 +232,29 @@ with st.container(border=True):
     c1, c2, c3, c4 = st.columns(4)
 
     with c1:
-        kelas_list = ["Semua"] + sorted([x for x in data["kelas"].dropna().unique().tolist() if x])
+        kelas_list = ["Semua"] + sorted([
+            x for x in data["kelas"].dropna().unique().tolist()
+            if str(x).strip() != ""
+        ])
         kelas_filter = st.selectbox("Kelas", kelas_list)
 
     with c2:
-        status_list = ["Semua"] + sorted([x for x in data["status_label"].dropna().unique().tolist() if x])
+        status_list = ["Semua"] + sorted([
+            x for x in data["status_label"].dropna().unique().tolist()
+            if str(x).strip() != ""
+        ])
         status_filter = st.selectbox("Status", status_list)
 
     with c3:
-        pred_list = ["Semua"] + sorted([x for x in data["prediksi_ml"].dropna().unique().tolist() if x])
+        pred_list = ["Semua"] + sorted([
+            x for x in data["prediksi_ml"].dropna().unique().tolist()
+            if str(x).strip() != ""
+        ])
         pred_filter = st.selectbox("Prediksi ML", pred_list)
 
     with c4:
         keyword = st.text_input("Cari NIS / Nama", "")
+
 
 filtered = data.copy()
 
@@ -172,6 +274,7 @@ if keyword.strip():
         filtered["nama"].str.lower().str.contains(key, na=False)
     ]
 
+
 # =========================
 # RINGKASAN
 # =========================
@@ -187,6 +290,18 @@ m2.metric("Pretest", pretest_count)
 m3.metric("Treatment", treatment_count)
 m4.metric("Posttest", posttest_count)
 m5.metric("Selesai", selesai_count)
+
+with st.caption("Data jawaban tersimpan"):
+    pass
+
+j1, j2, j3 = st.columns(3)
+with j1:
+    st.metric("Baris Pretest", len(jawaban_df[jawaban_df["phase"] == "pretest"]) if "phase" in jawaban_df.columns else 0)
+with j2:
+    st.metric("Baris Treatment", len(jawaban_df[jawaban_df["phase"] == "treatment"]) if "phase" in jawaban_df.columns else 0)
+with j3:
+    st.metric("Baris Posttest", len(jawaban_df[jawaban_df["phase"] == "posttest"]) if "phase" in jawaban_df.columns else 0)
+
 
 # =========================
 # MONITORING UTAMA
@@ -232,41 +347,45 @@ st.dataframe(
     height=520
 )
 
+
 # =========================
-# RINGKASAN DISTRIBUSI RINGKAS
+# RINGKASAN DISTRIBUSI
 # =========================
 with st.expander("Lihat Ringkasan Distribusi"):
     c1, c2, c3 = st.columns(3)
 
     with c1:
         st.write("**Status**")
-        st.dataframe(
-            filtered["status_label"].value_counts().reset_index().rename(
-                columns={"status_label": "Jumlah", "index": "Status"}
-            ),
-            hide_index=True,
-            use_container_width=True
+        status_df = (
+            filtered["status_label"]
+            .value_counts()
+            .reset_index()
         )
+        status_df.columns = ["Status", "Jumlah"]
+        st.dataframe(status_df, hide_index=True, use_container_width=True)
 
     with c2:
         st.write("**Prediksi ML**")
-        st.dataframe(
-            filtered["prediksi_ml"].replace("", "-").value_counts().reset_index().rename(
-                columns={"prediksi_ml": "Jumlah", "index": "Prediksi"}
-            ),
-            hide_index=True,
-            use_container_width=True
+        pred_df = (
+            filtered["prediksi_ml"]
+            .replace("", "-")
+            .value_counts()
+            .reset_index()
         )
+        pred_df.columns = ["Prediksi", "Jumlah"]
+        st.dataframe(pred_df, hide_index=True, use_container_width=True)
 
     with c3:
         st.write("**Weakest Indicator**")
-        st.dataframe(
-            filtered["weakest_indicator"].replace("", "-").value_counts().reset_index().rename(
-                columns={"weakest_indicator": "Jumlah", "index": "Weakest"}
-            ),
-            hide_index=True,
-            use_container_width=True
+        weak_df = (
+            filtered["weakest_indicator"]
+            .replace("", "-")
+            .value_counts()
+            .reset_index()
         )
+        weak_df.columns = ["Weakest", "Jumlah"]
+        st.dataframe(weak_df, hide_index=True, use_container_width=True)
+
 
 # =========================
 # EXPORT
@@ -281,40 +400,41 @@ tab1, tab2, tab3, tab4 = st.tabs([
 ])
 
 with tab1:
-    csv_monitor = filtered.to_csv(index=False).encode("utf-8")
-    st.download_button(
+    st.write("Export data monitoring session siswa.")
+    download_button_csv(
         "Download CSV Monitoring",
-        data=csv_monitor,
-        file_name="monitoring_siswa.csv",
-        mime="text/csv"
+        filtered,
+        "monitoring_siswa.csv"
     )
 
 with tab2:
     pretest_matrix = build_item_matrix(jawaban_df, "pretest")
+
     if pretest_matrix.empty:
         st.info("Belum ada data jawaban pretest.")
     else:
-        st.dataframe(pretest_matrix, use_container_width=True, hide_index=True)
-        csv_pretest = pretest_matrix.to_csv(index=False).encode("utf-8")
-        st.download_button(
+        st.write(f"Jumlah siswa pada matrix pretest: **{len(pretest_matrix)}**")
+        st.dataframe(pretest_matrix, use_container_width=True, hide_index=True, height=520)
+
+        download_button_csv(
             "Download CSV Pretest 0/1",
-            data=csv_pretest,
-            file_name="data_uji_instrumen_pretest.csv",
-            mime="text/csv"
+            pretest_matrix,
+            "data_uji_instrumen_pretest.csv"
         )
 
 with tab3:
     posttest_matrix = build_item_matrix(jawaban_df, "posttest")
+
     if posttest_matrix.empty:
         st.info("Belum ada data jawaban posttest.")
     else:
-        st.dataframe(posttest_matrix, use_container_width=True, hide_index=True)
-        csv_posttest = posttest_matrix.to_csv(index=False).encode("utf-8")
-        st.download_button(
+        st.write(f"Jumlah siswa pada matrix posttest: **{len(posttest_matrix)}**")
+        st.dataframe(posttest_matrix, use_container_width=True, hide_index=True, height=520)
+
+        download_button_csv(
             "Download CSV Posttest 0/1",
-            data=csv_posttest,
-            file_name="data_uji_instrumen_posttest.csv",
-            mime="text/csv"
+            posttest_matrix,
+            "data_uji_instrumen_posttest.csv"
         )
 
 with tab4:
@@ -324,17 +444,18 @@ with tab4:
         show_cols = [
             "nis", "nama", "kelas", "phase", "question_id",
             "ct", "level", "selected_answer", "correct_answer",
-            "is_correct", "score_binary", "score_weighted", "attempt_order", "created_at"
+            "is_correct", "score_binary", "score_weighted",
+            "attempt_order", "created_at"
         ]
+
         existing_show_cols = [c for c in show_cols if c in jawaban_df.columns]
         detail = jawaban_df[existing_show_cols].copy()
 
-        st.dataframe(detail, use_container_width=True, hide_index=True, height=500)
+        st.write(f"Jumlah baris jawaban detail: **{len(detail)}**")
+        st.dataframe(detail, use_container_width=True, hide_index=True, height=520)
 
-        csv_detail = detail.to_csv(index=False).encode("utf-8")
-        st.download_button(
+        download_button_csv(
             "Download CSV Jawaban Detail",
-            data=csv_detail,
-            file_name="jawaban_siswa_detail.csv",
-            mime="text/csv"
+            detail,
+            "jawaban_siswa_detail.csv"
         )
