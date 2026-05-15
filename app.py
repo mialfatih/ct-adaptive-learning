@@ -387,6 +387,27 @@ elif st.session_state["stage"] == "treatment":
 
     st.subheader("Treatment Adaptif")
     st.write("Kerjakan soal treatment berikut. Progres akan tersimpan agar bisa dilanjutkan kembali.")
+    # === TAMBAHAN UI ROADMAP CT ===
+    # Map nama CT agar UI lebih mudah dibaca siswa
+    ct_names = {"D": "Dekomposisi", "P": "Pola", "A": "Abstraksi", "Alg": "Algoritma"}
+    
+    trackers = []
+    for ct in state["priority_order"]:
+        nama = ct_names.get(ct, ct)
+        if ct in state["mastered_ct"]:
+            # Jika sudah selesai, warna hijau
+            trackers.append(f"🟢 **{nama}**") 
+        elif ct == state["current_ct"]:
+            # Jika sedang dikerjakan, warna biru
+            trackers.append(f"🔵 **{nama}**") 
+        else:
+            # Jika belum disentuh (masih terkunci), warna abu-abu
+            trackers.append(f"⚪ {nama}") 
+
+    # Menampilkan tracker dalam satu baris rapi tanpa shadow
+    st.markdown(" **Jalur Belajarmu:** &nbsp; " + " ➔ ".join(trackers))
+    st.write("---")
+    # ==============================
 
     if state["project_ready"]:
         st.success("Treatment selesai. Kamu bisa lanjut ke posttest.")
