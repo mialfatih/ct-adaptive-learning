@@ -411,7 +411,10 @@ elif st.session_state["stage"] == "treatment":
     with c2:
         st.metric("Level Soal", state["current_level"].capitalize())
     with c3:
-        st.metric("Jumlah Soal Treatment", state.get("answered_count", 0))
+        # Ambil target mastery dari utils.py dan poin siswa saat ini
+        target_poin = level_target(state["current_level"])
+        poin_sekarang = state.get("points", 0)
+        st.metric("Progres Mastery", f"{poin_sekarang} / {target_poin}")
 
     with st.container(border=True):
         st.write(f"**Materi:** {q['materi']}")
