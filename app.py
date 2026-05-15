@@ -426,9 +426,21 @@ elif st.session_state["stage"] == "treatment":
         st.error("Tidak ada soal treatment yang cocok di bank_soal.")
         st.stop()
 
+    # Bikin kamus (dictionary) deskripsi singkat untuk tiap CT
+    deskripsi_ct = {
+        "D": "Dekomposisi: Memecah masalah yang rumit menjadi bagian-bagian yang lebih kecil dan mudah diselesaikan.",
+        "P": "Pengenalan Pola: Mencari kesamaan atau tren dalam masalah untuk membantu menemukan solusi yang tepat.",
+        "A": "Abstraksi: Fokus pada informasi utama yang penting dan mengabaikan detail yang tidak relevan.",
+        "Alg": "Algoritma: Menyusun langkah-langkah logis dan berurutan untuk menyelesaikan masalah."
+    }
+
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.metric("Fokus CT", state["current_ct"])
+        st.metric(
+            label="Fokus CT", 
+            value=state["current_ct"], 
+            help=deskripsi_ct.get(state["current_ct"], "") # <--- INI KUNCI HOVER-NYA
+        )
     with c2:
         st.metric("Level Soal", state["current_level"].capitalize())
     with c3:
