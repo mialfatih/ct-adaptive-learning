@@ -70,7 +70,7 @@ defaults = {
     "posttest_answers": {},
     "final_result": None,
     "saved_to_db": False,
-    "treatment_status": "selesai"
+    "treatment_status": "selesai",
     "last_hint": None
 }
 
