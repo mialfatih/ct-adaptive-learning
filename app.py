@@ -634,21 +634,42 @@ elif st.session_state["stage"] == "treatment":
             st.rerun()
 
     with c2:
+        # Tombol awal hanya memicu munculnya area konfirmasi
         if st.button("Lewati Treatment", use_container_width=True):
-            st.session_state["treatment_status"] = "skip"
+            st.session_state["confirm_skip"] = True
 
-            try:
-                updated_session = mark_session_skip_treatment(
-                    session_id=st.session_state["session_row"]["id"],
-                    state=state
-                )
-                st.session_state["session_row"] = updated_session
-            except Exception as e:
-                st.error(f"Gagal menandai skip treatment: {e}")
-                st.stop()
+        # Jika tombol awal sudah diklik, munculkan dialog konfirmasi
+        if st.session_state.get("confirm_skip", False):
+            with st.container(border=True):
+                st.warning("⚠️ **Yakin ingin melewati latihan?** Progres di tahap ini akan dihentikan.")
+                
+                # Checkbox persetujuan
+                izin_guru = st.checkbox("Saya sudah mendapat arahan/izin dari guru untuk melewati latihan ini.")
+                
+                # Tombol eksekusi hanya aktif jika checkbox dicentang
+                if izin_guru:
+                    if st.button("Ya, Lewati Sekarang", type="primary", use_container_width=True):
+                        st.session_state["treatment_status"] = "skip"
 
-            st.session_state["stage"] = "posttest"
-            st.rerun()
+                        try:
+                            updated_session = mark_session_skip_treatment(
+                                session_id=st.session_state["session_row"]["id"],
+                                state=state
+                            )
+                            st.session_state["session_row"] = updated_session
+                        except Exception as e:
+                            st.error(f"Gagal menandai skip treatment: {e}")
+                            st.stop()
+
+                        # Bersihkan state konfirmasi dan pindah ke posttest
+                        st.session_state["confirm_skip"] = False
+                        st.session_state["stage"] = "posttest"
+                        st.rerun()
+                
+                # Tombol batal untuk menutup area konfirmasi
+                if st.button("Batal", use_container_width=True):
+                    st.session_state["confirm_skip"] = False
+                    st.rerun()
 
 # =========================
 # STAGE 5: POSTTEST
