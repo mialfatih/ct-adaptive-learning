@@ -216,10 +216,28 @@ render_header()
 # =========================
 if st.session_state["stage"] == "identitas":
     render_stage_badge("Identitas")
-    st.subheader("Isi Identitas Siswa")
+    st.subheader("Selamat Datang di Sistem Adaptive Learning")
+
+    # --- TAMBAHAN CP & ATP (Menu Lipat) ---
+    with st.expander("📚 Informasi Capaian Pembelajaran (CP) & ATP"):
+        st.markdown("""
+        **Mata Pelajaran:** Basis Data (RPL) | **Fase:** F (Kelas XI)
+        
+        **Capaian Pembelajaran (CP):**
+        Pada akhir fase F, peserta didik mampu memahami, menganalisis, dan menerapkan pengelolaan basis data menggunakan perintah *Data Definition Language* (DDL), *Data Manipulation Language* (DML), dan *Data Control Language* (DCL) dalam menyelesaikan masalah secara terstruktur.
+        
+        **Alur Tujuan Pembelajaran (ATP):**
+        1. Peserta didik mampu menganalisis permasalahan data dan memecahnya menjadi komponen penyusun basis data (Dekomposisi).
+        2. Peserta didik mampu merancang struktur tabel dan tipe data (DDL) dengan mengabaikan detail yang tidak perlu (Abstraksi).
+        3. Peserta didik mampu mengidentifikasi pola hubungan antar data untuk melakukan manipulasi data (DML).
+        4. Peserta didik mampu merumuskan langkah-langkah logis dan berurutan (Algoritma) untuk memberikan hak akses keamanan data (DCL).
+        
+        *(Catatan: Sistem ini menggunakan pendekatan Problem Based Learning terintegrasi Computational Thinking untuk mencapai target kurikulum di atas).*
+        """)
+    # --------------------------------------
 
     with st.container(border=True):
-        st.write("Silakan isi data diri terlebih dahulu sebelum memulai pembelajaran.")
+        st.write("Silakan isi data diri terlebih dahulu sebelum memulai tes awal.")
 
         with st.form("form_identitas"):
             c1, c2, c3 = st.columns(3)
@@ -230,8 +248,9 @@ if st.session_state["stage"] == "identitas":
             with c3:
                 student_class = st.text_input("Kelas")
 
-            submitted = st.form_submit_button("Mulai", type="primary")
-
+            submitted = st.form_submit_button("Mulai Pembelajaran", type="primary")
+            
+    # ... (kode submit ke bawah tetap sama) ...
     if submitted:
         if not student_id.strip():
             st.warning("NIS / ID wajib diisi.")
