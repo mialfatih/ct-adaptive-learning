@@ -138,21 +138,74 @@ def generate_knn_hint(ct_type, materi, knn_level):
 # SIDEBAR
 # =========================
 with st.sidebar:
-    st.header("Menu")
-    st.write(f"**Tahap:** {st.session_state['stage']}")
-
+    st.header("Menu Navigasi")
+    
     prof = st.session_state.get("student_profile")
     if prof:
+        st.write(f"👤 **{prof.get('student_name', '-')}** ({prof.get('student_class', '-')})")
         st.write("---")
-        st.write(f"**NIS:** {prof.get('student_id', '-')}")
-        st.write(f"**Nama:** {prof.get('student_name', '-')}")
-        st.write(f"**Kelas:** {prof.get('student_class', '-')}")
+
+    # 1. PETA PERJALANAN (VISUAL STEPPER)
+    st.markdown("**📍 Posisi Kamu Saat Ini:**")
+    
+    # Logika untuk menentukan icon centang berdasarkan stage
+    stages_order = ["identitas", "pretest", "hasil_pretest", "treatment", "posttest", "final"]
+    current_stage = st.session_state["stage"]
+    current_idx = stages_order.index(current_stage) if current_stage in stages_order else 0
+
+    def get_icon(stage_name):
+        idx = stages_order.index(stage_name)
+        if idx < current_idx: return "✅"
+        elif idx == current_idx: return "🔵"
+        else: return "⚪"
+
+    st.write(f"{get_icon('identitas')} 1. Isi Identitas")
+    st.write(f"{get_icon('pretest')} 2. Tes Awal (Pretest)")
+    st.write(f"{get_icon('treatment')} 3. Latihan Adaptif (Treatment)")
+    st.write(f"{get_icon('posttest')} 4. Tes Akhir (Posttest)")
+    st.write(f"{get_icon('final')} 5. Selesai")
 
     st.write("---")
-    if st.button("Reset Sesi"):
+
+    # 2. PETUNJUK PENGGUNAAN (EXPANDER DINAMIS)
+    with st.expander("📖 Buka Petunjuk Penggunaan"):
+        if current_stage in ["identitas"]:
+            st.write("Isi NIS, Nama, dan Kelasmu dengan benar. Data ini digunakan untuk menyimpan riwayat belajarmu.")
+            
+        elif current_stage in ["pretest", "hasil_pretest"]:
+            st.markdown("""
+            **Fase Pretest:**
+            * Jawablah 32 soal ini dengan sungguh-sungguh.
+            * Jangan takut salah! Hasil ini digunakan oleh AI untuk meracik menu latihan yang paling pas dengan tingkat pemahamanmu.
+            """)
+            
+        elif current_stage == "treatment":
+            st.markdown("""
+            **Aturan Main Latihan Adaptif:**
+            * AI telah memilihkan materi berdasarkan titik kelemahanmu dari hasil Pretest.
+            * **Sistem Poin:** Jawab benar poin bertambah (+1), jawab salah poin berkurang (-1).
+            * **Target Lulus Level:**
+              - Level **Easy** : Kumpulkan **3 Poin**
+              - Level **Medium** : Kumpulkan **5 Poin**
+              - Level **Hard** : Kumpulkan **4 Poin**
+            * Jika kamu menjawab salah, AI mungkin akan memunculkan petunjuk bantuan (Hint). Baca baik-baik!
+            * *Tips: Ingat kembali penjelasan materi DDL, DML, DCL yang sudah dijelaskan oleh guru di kelas.*
+            """)
+            
+        elif current_stage == "posttest":
+            st.markdown("""
+            **Fase Posttest:**
+            * Buktikan kemampuanmu setelah melewati latihan adaptif!
+            * Nilai ini akan dibandingkan dengan pretest untuk melihat seberapa jauh kamu berkembang.
+            """)
+            
+        else:
+            st.write("Selamat! Kamu telah menyelesaikan seluruh rangkaian pembelajaran.")
+
+    st.write("---")
+    if st.button("Reset Sesi", use_container_width=True):
         reset_all()
         st.rerun()
-
 # =========================
 # MAIN HEADER
 # =========================
