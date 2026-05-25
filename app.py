@@ -492,8 +492,27 @@ elif st.session_state["stage"] == "treatment":
     # ==============================
 
     if state.get("project_ready", False):
-        st.success("Treatment selesai. Kamu bisa lanjut ke posttest.")
-        if st.button("Lanjut ke Posttest", type="primary"):
+        st.balloons() # Efek gamifikasi (balon perayaan)
+        st.subheader("🎉 Luar Biasa! Latihan Selesai")
+        
+        with st.container(border=True):
+            st.markdown("### 📊 Rangkuman Perkembangan Belajarmu")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric("Total Soal Dikerjakan", state.get("answered_count", 0), delta="Selesai")
+            with c2:
+                st.metric("Indikator CT Dikuasai", len(state.get("mastered_ct", [])), delta="Tuntas")
+            
+            st.markdown("**Detail Pencapaian:**")
+            # Menampilkan list CT apa saja yang berhasil mereka taklukkan
+            for ct in state.get("mastered_ct", []):
+                nama_ct = ct_names.get(ct, ct)
+                st.success(f"✔️ **{nama_ct}** (Telah memenuhi standar penguasaan / Mastery)")
+                
+            st.info("💡 **Umpan Balik Sistem:** Kamu telah menunjukkan kegigihan yang luar biasa. Celah pemahaman (learning gaps) dari hasil Pretest sudah berhasil diperbaiki melalui latihan adaptif ini. Sekarang, mari buktikan peningkatanmu di Posttest!")
+
+        if st.button("Lanjut ke Posttest", type="primary", use_container_width=True):
             st.session_state["stage"] = "posttest"
             st.rerun()
         st.stop()
