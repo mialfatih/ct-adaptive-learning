@@ -433,22 +433,18 @@ elif st.session_state["stage"] == "treatment":
     # Map nama CT agar UI lebih mudah dibaca siswa
     ct_names = {"D": "Dekomposisi", "P": "Pola", "A": "Abstraksi", "Alg": "Algoritma"}
     
-    # 1. PASTIKAN BARIS INI ADA
-    trackers = [] 
+    trackers = [] # <--- BARIS INI SANGAT KRUSIAL, TIDAK BOLEH HILANG
     
     for ct in state["priority_order"]:
         nama = ct_names.get(ct, ct)
         if ct in state["mastered_ct"]:
-            # Jika sudah selesai, warna hijau
             trackers.append(f"🟢 **{nama}**") 
         elif ct == state["current_ct"]:
-            # Jika sedang dikerjakan, warna biru
             trackers.append(f"🔵 **{nama}**") 
         else:
-            # Jika belum disentuh (masih terkunci), warna abu-abu
             trackers.append(f"⚪ {nama}") 
 
-    # 2. PASTIKAN BARIS INI SEJAJAR LURUS DENGAN `trackers = []` di atas
+    # Menampilkan tracker dalam satu baris rapi tanpa shadow
     st.markdown(" **Jalur Belajarmu:** &nbsp; " + " ➔ ".join(trackers))
     st.write("---")
     # ==============================
@@ -460,8 +456,8 @@ elif st.session_state["stage"] == "treatment":
         st.warning(f"💡 **Petunjuk AI:** {st.session_state['last_hint']}")
         # Hapus hint setelah ditampilkan agar tidak nyangkut selamanya
         st.session_state["last_hint"] = None 
-    # ==============================   
-
+    # ==============================
+    
     if state["project_ready"]:
         st.success("Treatment selesai. Kamu bisa lanjut ke posttest.")
         if st.button("Lanjut ke Posttest", type="primary"):
