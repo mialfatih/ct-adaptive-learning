@@ -71,54 +71,23 @@ defaults = {
     "final_result": None,
     "saved_to_db": False,
     "treatment_status": "selesai",
-    "last_hint": None
+    "last_hint": None  # <--- Variabel untuk menyimpan Hint AI
 }
-
-# =========================
-# UI HELPERS
-# =========================
-def generate_knn_hint(ct_type, materi, knn_level):
-    """Menghasilkan hint dinamis berdasarkan klasifikasi KNN siswa"""
-    # Template Hint Lengkap (Untuk KNN Rendah)
-    hints_rendah = {
-        "D": f"Pecah masalah {materi} ini menjadi 3 bagian: Perintah utama, Tabel yang dituju, dan Kondisi/Syaratnya.",
-        "P": f"Ingat kembali pola dasar penulisan {materi}. Format urutan syntax-nya selalu sama dan berulang.",
-        "A": f"Abaikan nama data spesifiknya. Fokus pada struktur inti {materi} (seperti nama tabel atau kolom yang tepat).",
-        "Alg": f"Susun langkah {materi} ini secara berurutan. Pikirkan apa syntax yang harus diketik pertama kali."
-    }
-    
-    # Template Hint Tipis (Untuk KNN Sedang)
-    hints_sedang = {
-        "D": f"Cek kembali struktur dasar (Perintah, Tabel, Kondisi) pada {materi} ini.",
-        "P": f"Periksa apakah ada bagian klausa {materi} yang terlewat atau tidak sesuai urutan.",
-        "A": f"Fokus pada penulisan nama tabel dan kolom yang menjadi target.",
-        "Alg": f"Perhatikan urutan penulisan syntax {materi} Anda."
-    }
-
-    if knn_level == "rendah":
-        return hints_rendah.get(ct_type, "Perhatikan kembali materi dan struktur soalnya.")
-    elif knn_level == "sedang":
-        return hints_sedang.get(ct_type, "Coba teliti kembali penulisan syntax Anda.")
-    
-    return None # KNN Tinggi tidak dapat hint
 
 for k, v in defaults.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-
 def reset_all():
     for k, v in defaults.items():
         st.session_state[k] = v
 
-
 # =========================
-# UI HELPERS
+# UI HELPERS & KNN HINT
 # =========================
 def render_header():
     st.title("CT Adaptive Learning")
     st.caption("Sistem pembelajaran adaptif berbasis pretest, treatment, dan posttest")
-
 
 def render_student_box():
     prof = st.session_state.get("student_profile")
@@ -135,16 +104,35 @@ def render_student_box():
         with c3:
             st.write(f"**Kelas:** {prof.get('student_class', '-')}")
 
-
 def render_progress(answer_dict: dict, total_questions: int, label: str):
     answered = sum(1 for v in answer_dict.values() if str(v).strip() != "")
     progress = answered / total_questions if total_questions > 0 else 0
     st.progress(progress, text=f"{label}: {answered} dari {total_questions} soal terjawab")
 
-
 def render_stage_badge(stage_name: str):
     st.info(f"Tahap saat ini: **{stage_name}**")
 
+def generate_knn_hint(ct_type, materi, knn_level):
+    """Menghasilkan hint dinamis berdasarkan klasifikasi KNN siswa"""
+    hints_rendah = {
+        "D": f"Pecah masalah {materi} ini menjadi 3 bagian: Perintah utama, Tabel yang dituju, dan Kondisi/Syaratnya.",
+        "P": f"Ingat kembali pola dasar penulisan {materi}. Format urutan syntax-nya selalu sama dan berulang.",
+        "A": f"Abaikan nama data spesifiknya. Fokus pada struktur inti {materi} (seperti nama tabel atau kolom yang tepat).",
+        "Alg": f"Susun langkah {materi} ini secara berurutan. Pikirkan apa syntax yang harus diketik pertama kali."
+    }
+    hints_sedang = {
+        "D": f"Cek kembali struktur dasar (Perintah, Tabel, Kondisi) pada {materi} ini.",
+        "P": f"Periksa apakah ada bagian klausa {materi} yang terlewat atau tidak sesuai urutan.",
+        "A": f"Fokus pada penulisan nama tabel dan kolom yang menjadi target.",
+        "Alg": f"Perhatikan urutan penulisan syntax {materi} Anda."
+    }
+
+    if knn_level == "rendah":
+        return hints_rendah.get(ct_type, "Perhatikan kembali materi dan struktur soalnya.")
+    elif knn_level == "sedang":
+        return hints_sedang.get(ct_type, "Coba teliti kembali penulisan syntax Anda.")
+    
+    return None
 
 # =========================
 # SIDEBAR
@@ -164,7 +152,6 @@ with st.sidebar:
     if st.button("Reset Sesi"):
         reset_all()
         st.rerun()
-
 
 # =========================
 # MAIN HEADER
@@ -196,7 +183,6 @@ if st.session_state["stage"] == "identitas":
         if not student_id.strip():
             st.warning("NIS / ID wajib diisi.")
             st.stop()
-
         if not student_name.strip():
             st.warning("Nama wajib diisi.")
             st.stop()
@@ -207,7 +193,6 @@ if st.session_state["stage"] == "identitas":
         if pretest_df.empty:
             st.error("Soal pretest tidak ditemukan di bank_soal.")
             st.stop()
-
         if posttest_df.empty:
             st.error("Soal posttest tidak ditemukan di bank_soal.")
             st.stop()
@@ -218,7 +203,6 @@ if st.session_state["stage"] == "identitas":
                 nama=student_name.strip(),
                 kelas=student_class.strip()
             )
-
             session_row = get_or_create_active_session(siswa_row["id"])
 
             st.session_state["siswa_row"] = siswa_row
@@ -233,7 +217,6 @@ if st.session_state["stage"] == "identitas":
 
             status_session = session_row.get("status_session", "pretest")
 
-            # kalau ada sesi aktif lama, restore
             if status_session != "pretest":
                 profile = restore_student_profile_from_session(siswa_row, session_row)
                 treatment_state = restore_treatment_state_from_session(session_row)
@@ -253,7 +236,6 @@ if st.session_state["stage"] == "identitas":
 
                 st.rerun()
 
-            # sesi baru -> mulai dari pretest
             st.session_state["student_profile"] = {
                 "student_id": student_id.strip(),
                 "student_name": student_name.strip(),
@@ -266,7 +248,6 @@ if st.session_state["stage"] == "identitas":
 
         except Exception as e:
             st.error(f"Gagal menyiapkan data siswa/session: {e}")
-
 
 # =========================
 # STAGE 2: PRETEST
@@ -363,19 +344,6 @@ elif st.session_state["stage"] == "pretest":
         st.session_state["stage"] = "hasil_pretest"
         st.rerun()
 
-# Menampilkan tracker dalam satu baris rapi tanpa shadow
-    st.markdown(" **Jalur Belajarmu:** &nbsp; " + " ➔ ".join(trackers))
-    st.write("---")
-    
-    # ==============================
-    # TAMPILKAN HINT JIKA ADA
-    # ==============================
-    if st.session_state.get("last_hint"):
-        st.warning(f"💡 **Petunjuk AI:** {st.session_state['last_hint']}")
-        # Hapus hint setelah ditampilkan agar tidak nyangkut selamanya
-        st.session_state["last_hint"] = None 
-    # ==============================
-
 # =========================
 # STAGE 3: HASIL PRETEST
 # =========================
@@ -413,7 +381,6 @@ elif st.session_state["stage"] == "hasil_pretest":
         st.session_state["stage"] = "treatment"
         st.rerun()
 
-
 # =========================
 # STAGE 4: TREATMENT
 # =========================
@@ -430,21 +397,18 @@ elif st.session_state["stage"] == "treatment":
     st.write("Kerjakan soal treatment berikut. Progres akan tersimpan agar bisa dilanjutkan kembali.")
     
     # === TAMBAHAN UI ROADMAP CT ===
-    # Map nama CT agar UI lebih mudah dibaca siswa
     ct_names = {"D": "Dekomposisi", "P": "Pola", "A": "Abstraksi", "Alg": "Algoritma"}
+    trackers = []
     
-    trackers = [] # <--- BARIS INI SANGAT KRUSIAL, TIDAK BOLEH HILANG
-    
-    for ct in state["priority_order"]:
+    for ct in state.get("priority_order", []):
         nama = ct_names.get(ct, ct)
-        if ct in state["mastered_ct"]:
+        if ct in state.get("mastered_ct", []):
             trackers.append(f"🟢 **{nama}**") 
-        elif ct == state["current_ct"]:
+        elif ct == state.get("current_ct", ""):
             trackers.append(f"🔵 **{nama}**") 
         else:
             trackers.append(f"⚪ {nama}") 
 
-    # Menampilkan tracker dalam satu baris rapi tanpa shadow
     st.markdown(" **Jalur Belajarmu:** &nbsp; " + " ➔ ".join(trackers))
     st.write("---")
     # ==============================
@@ -454,11 +418,10 @@ elif st.session_state["stage"] == "treatment":
     # ==============================
     if st.session_state.get("last_hint"):
         st.warning(f"💡 **Petunjuk AI:** {st.session_state['last_hint']}")
-        # Hapus hint setelah ditampilkan agar tidak nyangkut selamanya
         st.session_state["last_hint"] = None 
     # ==============================
-    
-    if state["project_ready"]:
+
+    if state.get("project_ready", False):
         st.success("Treatment selesai. Kamu bisa lanjut ke posttest.")
         if st.button("Lanjut ke Posttest", type="primary"):
             st.session_state["stage"] = "posttest"
@@ -475,7 +438,6 @@ elif st.session_state["stage"] == "treatment":
         st.error("Tidak ada soal treatment yang cocok di bank_soal.")
         st.stop()
 
-    # Bikin kamus (dictionary) deskripsi singkat untuk tiap CT
     deskripsi_ct = {
         "D": "Dekomposisi: Memecah masalah yang rumit menjadi bagian-bagian yang lebih kecil dan mudah diselesaikan.",
         "P": "Pengenalan Pola: Mencari kesamaan atau tren dalam masalah untuk membantu menemukan solusi yang tepat.",
@@ -488,12 +450,11 @@ elif st.session_state["stage"] == "treatment":
         st.metric(
             label="Fokus CT", 
             value=state["current_ct"], 
-            help=deskripsi_ct.get(state["current_ct"], "") # <--- INI KUNCI HOVER-NYA
+            help=deskripsi_ct.get(state["current_ct"], "")
         )
     with c2:
         st.metric("Level Soal", state["current_level"].capitalize())
     with c3:
-        # Ambil target mastery dari utils.py dan poin siswa saat ini
         target_poin = level_target(state["current_level"])
         poin_sekarang = state.get("points", 0)
         st.metric("Progres Mastery", f"{poin_sekarang} / {target_poin}")
@@ -524,7 +485,6 @@ elif st.session_state["stage"] == "treatment":
                 st.stop()
 
             correct = (choice == q["answer"])
-
             state["answered_count"] = state.get("answered_count", 0) + 1
 
             try:
@@ -552,12 +512,12 @@ elif st.session_state["stage"] == "treatment":
             if correct:
                 state["points"] += 1
                 st.success("Jawaban benar.")
-                st.session_state["last_hint"] = None # Pastikan hint bersih kalau benar
+                st.session_state["last_hint"] = None 
             else:
                 if state["points"] > 0:
                     state["points"] -= 1
                 st.error("Jawaban belum tepat.")
-                
+
                 # ==========================================
                 # TRIGGER ADAPTIVE SCAFFOLDING (KNN HINT)
                 # ==========================================
@@ -566,7 +526,6 @@ elif st.session_state["stage"] == "treatment":
                 soal_ct = q["ct"]
                 soal_materi = q["materi"]
                 
-                # Hint hanya keluar jika level soal easy/medium DAN KNN siswa bukan tinggi
                 if soal_level in ["easy", "medium"] and knn_level != "tinggi":
                     hint_text = generate_knn_hint(soal_ct, soal_materi, knn_level)
                     if hint_text:
@@ -575,11 +534,9 @@ elif st.session_state["stage"] == "treatment":
                     st.session_state["last_hint"] = None
                 # ==========================================
 
-            # --- PASTIKAN DUA BARIS DI BAWAH INI MENJOROK KE DALAM (INDENT) ---
             if state["points"] >= level_target(state["current_level"]):
                 state, msg = advance_state(state)
                 st.info(msg)
-            # ------------------------------------------------------------------
 
             st.session_state["treatment_state"] = state
             st.session_state["current_question"] = None
@@ -597,6 +554,7 @@ elif st.session_state["stage"] == "treatment":
                 st.stop()
 
             st.rerun()
+
     with c2:
         if st.button("Lewati Treatment", use_container_width=True):
             st.session_state["treatment_status"] = "skip"
@@ -613,7 +571,6 @@ elif st.session_state["stage"] == "treatment":
 
             st.session_state["stage"] = "posttest"
             st.rerun()
-
 
 # =========================
 # STAGE 5: POSTTEST
@@ -684,7 +641,7 @@ elif st.session_state["stage"] == "posttest":
                 phase="posttest",
                 replace_existing=True
             )
-        
+            
             saved_row = update_session_final(
                 session_id=st.session_state["session_row"]["id"],
                 profile=st.session_state["student_profile"],
@@ -692,21 +649,14 @@ elif st.session_state["stage"] == "posttest":
                 posttest_score=posttest_score,
                 treatment_status=st.session_state.get("treatment_status", "selesai")
             )
-        
+            
             st.session_state["final_result"] = saved_row
             st.session_state["saved_to_db"] = True
             st.session_state["stage"] = "final"
             st.rerun()
-        
+            
         except Exception as e:
             st.error(f"Gagal menyimpan hasil akhir ke Supabase: {e}")
-            st.session_state["final_result"] = saved_row
-            st.session_state["saved_to_db"] = True
-            st.session_state["stage"] = "final"
-            st.rerun()
-        except Exception as e:
-            st.error(f"Gagal menyimpan hasil akhir ke Supabase: {e}")
-
 
 # =========================
 # STAGE 6: FINAL
@@ -715,7 +665,7 @@ elif st.session_state["stage"] == "final":
     render_stage_badge("Selesai")
     render_student_box()
 
-    result = st.session_state["final_result"]
+    result = st.session_state.get("final_result")
 
     if not result:
         st.error("Hasil akhir tidak ditemukan.")
@@ -726,22 +676,22 @@ elif st.session_state["stage"] == "final":
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("Pretest", result["total_score"])
+        st.metric("Pretest", result.get("total_score", 0))
     with c2:
-        st.metric("Posttest", result["posttest_score"])
+        st.metric("Posttest", result.get("posttest_score", 0))
     with c3:
-        st.metric("Gain", result["gain_score"])
+        st.metric("Gain", result.get("gain_score", 0))
     with c4:
-        st.metric("Treatment", str(result["treatment_status"]).capitalize())
+        st.metric("Treatment", str(result.get("treatment_status", "selesai")).capitalize())
 
     with st.container(border=True):
         st.markdown("**Ringkasan Hasil**")
-        st.write(f"- Weakest Indicator: **{result['weakest_indicator']}**")
-        st.write(f"- Prediksi ML: **{str(result['prediksi_ml']).capitalize()}**")
-        st.write(f"- Materi Treatment: **{result['treatment_materi']}**")
-        st.write(f"- Level Treatment: **{result['treatment_level']}**")
-        st.write(f"- Jumlah Soal Treatment: **{result['treatment_jumlah_soal']}**")
-        st.write(f"- Waktu Submit: **{result['timestamp']}**")
+        st.write(f"- Weakest Indicator: **{result.get('weakest_indicator', '-')}**")
+        st.write(f"- Prediksi ML: **{str(result.get('prediksi_ml', '-')).capitalize()}**")
+        st.write(f"- Materi Treatment: **{result.get('treatment_materi', '-')}**")
+        st.write(f"- Level Treatment: **{result.get('treatment_level', '-')}**")
+        st.write(f"- Jumlah Soal Treatment: **{result.get('treatment_jumlah_soal', 0)}**")
+        st.write(f"- Waktu Submit: **{result.get('timestamp', '-')}**")
 
     if st.button("Mulai Siswa Baru", type="primary"):
         reset_all()
