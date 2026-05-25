@@ -428,11 +428,14 @@ elif st.session_state["stage"] == "treatment":
 
     st.subheader("Treatment Adaptif")
     st.write("Kerjakan soal treatment berikut. Progres akan tersimpan agar bisa dilanjutkan kembali.")
+    
     # === TAMBAHAN UI ROADMAP CT ===
     # Map nama CT agar UI lebih mudah dibaca siswa
     ct_names = {"D": "Dekomposisi", "P": "Pola", "A": "Abstraksi", "Alg": "Algoritma"}
     
-    trackers = []
+    # 1. PASTIKAN BARIS INI ADA
+    trackers = [] 
+    
     for ct in state["priority_order"]:
         nama = ct_names.get(ct, ct)
         if ct in state["mastered_ct"]:
@@ -445,10 +448,19 @@ elif st.session_state["stage"] == "treatment":
             # Jika belum disentuh (masih terkunci), warna abu-abu
             trackers.append(f"⚪ {nama}") 
 
-    # Menampilkan tracker dalam satu baris rapi tanpa shadow
+    # 2. PASTIKAN BARIS INI SEJAJAR LURUS DENGAN `trackers = []` di atas
     st.markdown(" **Jalur Belajarmu:** &nbsp; " + " ➔ ".join(trackers))
     st.write("---")
     # ==============================
+
+    # ==============================
+    # TAMPILKAN HINT JIKA ADA
+    # ==============================
+    if st.session_state.get("last_hint"):
+        st.warning(f"💡 **Petunjuk AI:** {st.session_state['last_hint']}")
+        # Hapus hint setelah ditampilkan agar tidak nyangkut selamanya
+        st.session_state["last_hint"] = None 
+    # ==============================   
 
     if state["project_ready"]:
         st.success("Treatment selesai. Kamu bisa lanjut ke posttest.")
