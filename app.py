@@ -567,7 +567,11 @@ elif st.session_state["stage"] == "treatment":
                     st.session_state["last_hint"] = None
                 # ==========================================
 
+            # --- PASTIKAN DUA BARIS DI BAWAH INI MENJOROK KE DALAM (INDENT) ---
             if state["points"] >= level_target(state["current_level"]):
+                state, msg = advance_state(state)
+                st.info(msg)
+            # ------------------------------------------------------------------
 
             st.session_state["treatment_state"] = state
             st.session_state["current_question"] = None
@@ -585,7 +589,6 @@ elif st.session_state["stage"] == "treatment":
                 st.stop()
 
             st.rerun()
-
     with c2:
         if st.button("Lewati Treatment", use_container_width=True):
             st.session_state["treatment_status"] = "skip"
