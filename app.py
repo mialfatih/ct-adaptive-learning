@@ -182,13 +182,13 @@ with st.sidebar:
         elif current_stage == "treatment":
             st.markdown("""
             **Aturan Main Latihan Adaptif:**
-            * AI telah memilihkan materi berdasarkan titik kelemahanmu dari hasil Pretest.
+            * Sitem telah memilihkan materi berdasarkan titik kelemahanmu dari hasil Pretest.
             * **Sistem Poin:** Jawab benar poin bertambah (+1), jawab salah poin berkurang (-1).
             * **Target Lulus Level:**
               - Level **Easy** : Kumpulkan **3 Poin**
               - Level **Medium** : Kumpulkan **5 Poin**
               - Level **Hard** : Kumpulkan **4 Poin**
-            * Jika kamu menjawab salah, AI mungkin akan memunculkan petunjuk bantuan (Hint). Baca baik-baik!
+            * Jika kamu menjawab salah, Sistem mungkin akan memunculkan petunjuk bantuan (Hint). Baca baik-baik!
             * *Tips: Ingat kembali penjelasan materi DDL, DML, DCL yang sudah dijelaskan oleh guru di kelas.*
             """)
             
