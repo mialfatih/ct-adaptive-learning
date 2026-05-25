@@ -71,7 +71,36 @@ defaults = {
     "final_result": None,
     "saved_to_db": False,
     "treatment_status": "selesai"
+    "last_hint": None
 }
+
+# =========================
+# UI HELPERS
+# =========================
+def generate_knn_hint(ct_type, materi, knn_level):
+    """Menghasilkan hint dinamis berdasarkan klasifikasi KNN siswa"""
+    # Template Hint Lengkap (Untuk KNN Rendah)
+    hints_rendah = {
+        "D": f"Pecah masalah {materi} ini menjadi 3 bagian: Perintah utama, Tabel yang dituju, dan Kondisi/Syaratnya.",
+        "P": f"Ingat kembali pola dasar penulisan {materi}. Format urutan syntax-nya selalu sama dan berulang.",
+        "A": f"Abaikan nama data spesifiknya. Fokus pada struktur inti {materi} (seperti nama tabel atau kolom yang tepat).",
+        "Alg": f"Susun langkah {materi} ini secara berurutan. Pikirkan apa syntax yang harus diketik pertama kali."
+    }
+    
+    # Template Hint Tipis (Untuk KNN Sedang)
+    hints_sedang = {
+        "D": f"Cek kembali struktur dasar (Perintah, Tabel, Kondisi) pada {materi} ini.",
+        "P": f"Periksa apakah ada bagian klausa {materi} yang terlewat atau tidak sesuai urutan.",
+        "A": f"Fokus pada penulisan nama tabel dan kolom yang menjadi target.",
+        "Alg": f"Perhatikan urutan penulisan syntax {materi} Anda."
+    }
+
+    if knn_level == "rendah":
+        return hints_rendah.get(ct_type, "Perhatikan kembali materi dan struktur soalnya.")
+    elif knn_level == "sedang":
+        return hints_sedang.get(ct_type, "Coba teliti kembali penulisan syntax Anda.")
+    
+    return None # KNN Tinggi tidak dapat hint
 
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -334,6 +363,18 @@ elif st.session_state["stage"] == "pretest":
         st.session_state["stage"] = "hasil_pretest"
         st.rerun()
 
+# Menampilkan tracker dalam satu baris rapi tanpa shadow
+    st.markdown(" **Jalur Belajarmu:** &nbsp; " + " ➔ ".join(trackers))
+    st.write("---")
+    
+    # ==============================
+    # TAMPILKAN HINT JIKA ADA
+    # ==============================
+    if st.session_state.get("last_hint"):
+        st.warning(f"💡 **Petunjuk AI:** {st.session_state['last_hint']}")
+        # Hapus hint setelah ditampilkan agar tidak nyangkut selamanya
+        st.session_state["last_hint"] = None 
+    # ==============================
 
 # =========================
 # STAGE 3: HASIL PRETEST
@@ -503,14 +544,30 @@ elif st.session_state["stage"] == "treatment":
             if correct:
                 state["points"] += 1
                 st.success("Jawaban benar.")
+                st.session_state["last_hint"] = None # Pastikan hint bersih kalau benar
             else:
                 if state["points"] > 0:
                     state["points"] -= 1
                 st.error("Jawaban belum tepat.")
+                
+                # ==========================================
+                # TRIGGER ADAPTIVE SCAFFOLDING (KNN HINT)
+                # ==========================================
+                knn_level = st.session_state["student_profile"].get("overall", "tinggi").lower()
+                soal_level = q["level"].lower()
+                soal_ct = q["ct"]
+                soal_materi = q["materi"]
+                
+                # Hint hanya keluar jika level soal easy/medium DAN KNN siswa bukan tinggi
+                if soal_level in ["easy", "medium"] and knn_level != "tinggi":
+                    hint_text = generate_knn_hint(soal_ct, soal_materi, knn_level)
+                    if hint_text:
+                        st.session_state["last_hint"] = hint_text
+                else:
+                    st.session_state["last_hint"] = None
+                # ==========================================
 
             if state["points"] >= level_target(state["current_level"]):
-                state, msg = advance_state(state)
-                st.info(msg)
 
             st.session_state["treatment_state"] = state
             st.session_state["current_question"] = None
