@@ -71,7 +71,7 @@ defaults = {
     "final_result": None,
     "saved_to_db": False,
     "treatment_status": "selesai",
-    "last_hint": None  # <--- Variabel untuk menyimpan Hint AI
+    "wrong_previous": False  # <--- Variabel untuk menyimpan Hint AI
 }
 
 for k, v in defaults.items():
@@ -416,9 +416,7 @@ elif st.session_state["stage"] == "treatment":
     # ==============================
     # TAMPILKAN HINT JIKA ADA
     # ==============================
-    if st.session_state.get("last_hint"):
-        st.warning(f"💡 **Petunjuk AI:** {st.session_state['last_hint']}")
-        st.session_state["last_hint"] = None 
+    
     # ==============================
 
     if state.get("project_ready", False):
@@ -437,6 +435,26 @@ elif st.session_state["stage"] == "treatment":
     if q is None:
         st.error("Tidak ada soal treatment yang cocok di bank_soal.")
         st.stop()
+
+    # ==========================================
+    # TRIGGER ADAPTIVE SCAFFOLDING (FORWARD-LOOKING HINT)
+    # ==========================================
+    # Jika siswa salah di soal sebelumnya, berikan hint untuk soal YANG SEKARANG (q)
+    if st.session_state.get("wrong_previous"):
+        knn_level = st.session_state["student_profile"].get("overall", "tinggi").lower()
+        soal_level = q["level"].lower()
+        soal_ct = q["ct"]
+        soal_materi = q["materi"]
+        
+        # Hint keluar jika level soal saat ini easy/medium DAN KNN bukan tinggi
+        if soal_level in ["easy", "medium"] and knn_level != "tinggi":
+            hint_text = generate_knn_hint(soal_ct, soal_materi, knn_level)
+            if hint_text:
+                st.warning(f"💡 **Petunjuk AI:** {hint_text}")
+        
+        # Matikan alarm setelah hint ditampilkan (agar tidak muncul terus)
+        st.session_state["wrong_previous"] = False
+    # ==========================================
 
     deskripsi_ct = {
         "D": "Dekomposisi: Memecah masalah yang rumit menjadi bagian-bagian yang lebih kecil dan mudah diselesaikan.",
@@ -512,11 +530,18 @@ elif st.session_state["stage"] == "treatment":
             if correct:
                 state["points"] += 1
                 st.success("Jawaban benar.")
-                st.session_state["last_hint"] = None 
+                st.session_state["wrong_previous"] = False # Jawaban benar, tidak butuh hint di soal selanjutnya
             else:
                 if state["points"] > 0:
                     state["points"] -= 1
                 st.error("Jawaban belum tepat.")
+                st.session_state["wrong_previous"] = True  # Nyalakan alarm! Siswa butuh hint di soal selanjutnya
+
+            if state["points"] >= level_target(state["current_level"]):
+                state, msg = advance_state(state)
+                st.info(msg)
+                # Jika dia naik level karena poinnya cukup, matikan alarm hint agar di level baru dia mulai fresh
+                st.session_state["wrong_previous"] = False
 
                 # ==========================================
                 # TRIGGER ADAPTIVE SCAFFOLDING (KNN HINT)
