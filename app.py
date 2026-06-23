@@ -187,7 +187,7 @@ with st.sidebar:
             * **Target Lulus Level:**
               - Level **Easy** : Kumpulkan **3 Poin**
               - Level **Medium** : Kumpulkan **5 Poin**
-              - Level **Hard** : Kumpulkan **4 Poin**
+              - Level **Hard** : Kumpulkan **2 Poin**
             * Jika kamu menjawab salah, Sistem mungkin akan memunculkan petunjuk bantuan (Hint). Baca baik-baik!
             * *Tips: Ingat kembali penjelasan materi DDL, DML, DCL yang sudah dijelaskan oleh guru di kelas.*
             """)
