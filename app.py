@@ -33,7 +33,7 @@ st.set_page_config(
     layout="centered"
 )
 
-MODEL_PATH = "models/knn_ct_model_k11.pkl"
+MODEL_PATH = "models/knn_ct_final_smote_knn_k9.pkl"
 
 # =========================
 # LOAD RESOURCES
