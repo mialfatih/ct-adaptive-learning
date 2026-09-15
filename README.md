@@ -1,199 +1,300 @@
-# 🚀 CT Adaptive Learning System
+# CT Adaptive Learning System
 
-### *Machine Learning-Based Adaptive Learning for Computational Thinking (CT)*
+A web-based adaptive learning system designed to assess and support students' Computational Thinking skills using machine learning and adaptive learning strategies.
 
-![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
-![Streamlit](https://img.shields.io/badge/Framework-Streamlit-red?logo=streamlit)
-![ML](https://img.shields.io/badge/Machine%20Learning-KNN-green)
-![Status](https://img.shields.io/badge/Status-Active-success)
+**Live Demo:** https://ct-adaptive-learning.streamlit.app/
 
 ---
 
-## 📌 Overview
+## Overview
 
-**CT Adaptive Learning System** adalah aplikasi berbasis web yang dirancang untuk mengukur dan meningkatkan kemampuan **Computational Thinking (CT)** siswa melalui pendekatan **Adaptive Learning** yang dikombinasikan dengan **Machine Learning (KNN)**.
+CT Adaptive Learning System was developed as part of an undergraduate research project in Computer Science Education at Universitas Pendidikan Indonesia.
 
-Sistem ini dikembangkan sebagai bagian dari penelitian skripsi pada bidang **Pendidikan Ilmu Komputer**, dengan tujuan untuk menciptakan lingkungan belajar yang **personalized, adaptif, dan berbasis data**.
+The system evaluates students' Computational Thinking abilities and classifies their proficiency using a K-Nearest Neighbors (KNN) model. Based on the assessment results, the application determines an adaptive learning path that focuses on each student's current proficiency level and weakest Computational Thinking indicator.
 
----
-
-## 🎯 Key Features
-
-* 🧠 **Computational Thinking Assessment**
-
-  * Dekomposisi
-  * Pengenalan Pola
-  * Abstraksi
-  * Algoritma
-
-* 🤖 **Machine Learning Classification (KNN)**
-
-  * Klasifikasi level CT siswa: *rendah, sedang, tinggi*
-
-* 🎯 **Adaptive Learning Engine**
-
-  * Treatment berdasarkan:
-
-    * Needs (threshold)
-    * Weakest Indicator
-
-* 📊 **Pretest – Treatment – Posttest Flow**
-
-  * Pengukuran peningkatan kemampuan siswa (gain score)
-
-* ☁️ **Cloud-Based Deployment**
-
-  * Akses real-time melalui Streamlit Cloud
+The application is designed for vocational high school students and integrates assessment, machine learning classification, adaptive practice, and learning progress tracking in a single web-based system.
 
 ---
 
-## 🧠 System Architecture
+## Key Features
+
+### Computational Thinking Assessment
+
+The system evaluates four Computational Thinking dimensions:
+
+- Decomposition
+- Pattern Recognition
+- Abstraction
+- Algorithmic Thinking
+
+### Machine Learning Classification
+
+A K-Nearest Neighbors (KNN) model is used to classify students into three Computational Thinking proficiency levels:
+
+- Low
+- Medium
+- High
+
+### Adaptive Learning
+
+Learning activities are adjusted based on:
+
+- The student's Computational Thinking proficiency level
+- The weakest Computational Thinking indicator
+- Student performance during the adaptive learning process
+
+### Learning Workflow
+
+The application follows a structured learning sequence:
 
 ```text
-User (Student)
-      ↓
-Pretest (32 Questions)
-      ↓
-Scoring per CT Indicator
-      ↓
-Machine Learning (KNN)
-      ↓
-Level CT (Low / Medium / High)
-      ↓
-Rule-Based Treatment
-(Needs + Weak Indicator)
-      ↓
-Adaptive Questions (80 Bank)
-      ↓
+Student
+   |
+   v
+Pretest
+   |
+   v
+Computational Thinking Scoring
+   |
+   v
+KNN Classification
+   |
+   v
+CT Proficiency Level
+   |
+   v
+Adaptive Learning
+   |
+   v
 Posttest
-      ↓
-Gain Score & Analysis
+   |
+   v
+Learning Results
+```
+
+### Data Persistence
+
+Student information, learning sessions, and responses are stored using Supabase with PostgreSQL as the underlying database.
+
+### Teacher Monitoring
+
+The project also includes a monitoring interface for reviewing student learning progress and assessment results.
+
+---
+
+## Technology Stack
+
+| Area | Technology |
+| --- | --- |
+| Programming Language | Python |
+| Web Application | Streamlit |
+| Machine Learning | Scikit-learn |
+| ML Algorithm | K-Nearest Neighbors |
+| Data Processing | Pandas, NumPy |
+| Database | Supabase / PostgreSQL |
+| Model Serialization | Joblib |
+| Deployment | Streamlit Community Cloud |
+
+---
+
+## Machine Learning
+
+The KNN model uses four Computational Thinking scores as input features:
+
+| Feature | Description |
+| --- | --- |
+| `D_score` | Decomposition |
+| `P_score` | Pattern Recognition |
+| `A_score` | Abstraction |
+| `Alg_score` | Algorithmic Thinking |
+
+Each indicator has a score range of `0–14`.
+
+The model predicts one of three Computational Thinking proficiency levels:
+
+| Class | Level |
+| --- | --- |
+| 0 | Low |
+| 1 | Medium |
+| 2 | High |
+
+The predicted level is then combined with the student's Computational Thinking profile to determine the appropriate adaptive learning path.
+
+---
+
+## System Architecture
+
+```text
+                    +------------------+
+                    |     Student      |
+                    +--------+---------+
+                             |
+                             v
+                    +------------------+
+                    |     Pretest      |
+                    +--------+---------+
+                             |
+                             v
+             +-------------------------------+
+             | Computational Thinking Scores |
+             | D | P | A | Alg               |
+             +---------------+---------------+
+                             |
+                             v
+                    +------------------+
+                    |    KNN Model     |
+                    +--------+---------+
+                             |
+                             v
+              +----------------------------+
+              | CT Proficiency Prediction  |
+              | Low | Medium | High        |
+              +-------------+--------------+
+                            |
+                            v
+             +-----------------------------+
+             | Adaptive Learning Engine    |
+             |                             |
+             | - CT proficiency level      |
+             | - Weakest CT indicator      |
+             | - Student performance       |
+             +-------------+---------------+
+                           |
+                           v
+                  +------------------+
+                  | Adaptive Practice|
+                  +--------+---------+
+                           |
+                           v
+                  +------------------+
+                  |     Posttest     |
+                  +--------+---------+
+                           |
+                           v
+                +----------------------+
+                | Learning Results     |
+                +----------+-----------+
+                           |
+                           v
+               +-----------------------+
+               | Supabase / PostgreSQL |
+               +-----------------------+
 ```
 
 ---
 
-## 🛠️ Tech Stack
-
-| Layer            | Technology                |
-| ---------------- | ------------------------- |
-| Frontend         | Streamlit                 |
-| Backend Logic    | Python                    |
-| Machine Learning | Scikit-learn (KNN)        |
-| Database         | Supabase/PostgreSQL             |
-| Deployment       | Streamlit Community Cloud |
-
----
-
-## 📂 Project Structure
+## Project Structure
 
 ```text
 ct-adaptive-learning/
 │
-├── app.py                  # Main Streamlit app
-├── app2.py                 # Alternative / extended app logic
-├── utils.py                # Helper functions
+├── app.py
+├── app2.py
+├── utils.py
 │
 ├── dataset_ct_240_balanced.csv
 ├── knn_ct_meta.json
 │
+├── models/
+│
 ├── requirements.txt
 ├── README.md
 │
-└── mlctskripsi.ipynb       # Experiment notebook
+└── mlctskripsi.ipynb
 ```
 
+### Main Files
+
+**`app.py`**  
+Main Streamlit application used for the student learning process.
+
+**`app2.py`**  
+Supporting monitoring interface used to review student learning data and progress.
+
+**`utils.py`**  
+Contains utility functions used by the application, including database-related operations.
+
+**`mlctskripsi.ipynb`**  
+Notebook used during the machine learning development and experimentation process.
+
+**`dataset_ct_240_balanced.csv`**  
+Dataset used during the machine learning model development process.
+
+**`knn_ct_meta.json`**  
+Contains metadata related to the KNN model.
+
 ---
 
-## 🚀 Live Demo
+## Running Locally
 
-👉 https://ct-adaptive-learning.streamlit.app/
-
----
-
-## ⚙️ Installation (Local)
+Clone the repository:
 
 ```bash
 git clone https://github.com/mialfatih/ct-adaptive-learning.git
 cd ct-adaptive-learning
+```
+
+Install the required dependencies:
+
+```bash
 pip install -r requirements.txt
+```
+
+Run the application:
+
+```bash
 streamlit run app.py
 ```
 
 ---
 
-## 🔐 Configuration
+## Configuration
 
-> ⚠️ File credential (Supabase API) tidak disertakan demi keamanan.
+The application uses Supabase for database services.
 
-Untuk menjalankan sistem:
+Supabase credentials are not included in this repository for security reasons.
 
-1. Tambahkan file credential sendiri
-2. Atur koneksi Supabase
-3. Sesuaikan konfigurasi di `secrets.toml`
+To run the project locally, configure your Supabase credentials using Streamlit's secrets configuration.
 
----
+Create the following file:
 
-## 📊 Machine Learning Details
+```text
+.streamlit/secrets.toml
+```
 
-* Algorithm: **K-Nearest Neighbors (KNN)**
-* Features:
+Then configure the required Supabase credentials according to your own Supabase project.
 
-  * D_score
-  * P_score
-  * A_score
-  * Alg_score
-* Range: 0 – 14 per indicator
-* Label:
-
-  * 0 = Rendah
-  * 1 = Sedang
-  * 2 = Tinggi
+Credentials and private keys should never be committed to the public repository.
 
 ---
 
-## 🎓 Research Context
+## Research Context
 
-Sistem ini dikembangkan menggunakan pendekatan:
+This system was developed as part of research in Computer Science Education, with a focus on applying adaptive learning to Computational Thinking education for vocational high school students.
 
-* **R&D (Research and Development)**
-* Model: **SLEEG + ADDIE**
-* Standar: **ISO 21001:2018**
+The research explores how student assessment results, machine learning classification, and adaptive learning strategies can be combined to provide a more personalized learning experience.
 
-Digunakan untuk siswa tingkat **SMK (Informatika)**.
+The system was implemented in the context of database learning materials, including:
 
----
-
-## 📈 Future Improvements
-
-* 🔐 Authentication system (student login)
-* 📊 Dashboard analitik untuk guru
-* 🧠 Model ML yang lebih advanced (Random Forest / XGBoost)
-* 🗄️ Migrasi database ke SQL
+- Data Definition Language (DDL)
+- Data Manipulation Language (DML)
+- Data Control Language (DCL)
 
 ---
 
-## 🤝 Contributing
+## Live Application
 
-Open for feedback & collaboration.
+The deployed application is available at:
 
----
-
-## 📜 License
-
-For educational and research purposes.
+https://ct-adaptive-learning.streamlit.app/
 
 ---
 
-## 👨‍💻 Author
+## Author
 
 **Muhammad Izzuddin Al Fatih**
-Undergraduate Student – Pendidikan Ilmu Komputer
-Universitas Pendidikan Indonesia (UPI)
 
----
+Computer Science Education  
+Universitas Pendidikan Indonesia
 
-## ⭐ Support
-
-If you find this project useful, consider giving it a ⭐ on GitHub!
-
----
+GitHub: https://github.com/mialfatih
