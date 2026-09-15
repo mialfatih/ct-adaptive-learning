@@ -22,7 +22,7 @@ The application is designed for vocational high school students and integrates a
 
 The system evaluates students across four Computational Thinking dimensions and uses the assessment results to determine their proficiency level and weakest CT indicator.
 
-![Pretest Result and CT Classification](docs/pretest-result.png)
+![Pretest Result and CT Classification](docs/learning-summary.png)
 
 ### Adaptive Learning Process
 
@@ -34,7 +34,7 @@ Learning activities are dynamically adjusted according to the student's CT profi
 
 At the end of the adaptive learning session, the system summarizes the student's progress and mastery across the Computational Thinking indicators.
 
-![Learning Progress Summary](docs/learning-summary.png)
+![Learning Progress Summary](docs/pretest-result.png)
 
 ---
 
