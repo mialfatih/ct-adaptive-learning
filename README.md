@@ -79,7 +79,7 @@ Gain Score & Analysis
 | Frontend         | Streamlit                 |
 | Backend Logic    | Python                    |
 | Machine Learning | Scikit-learn (KNN)        |
-| Database         | Google Sheets             |
+| Database         | Supabase/PostgreSQL             |
 | Deployment       | Streamlit Community Cloud |
 
 ---
@@ -123,12 +123,12 @@ streamlit run app.py
 
 ## 🔐 Configuration
 
-> ⚠️ File credential (Google Sheets API) tidak disertakan demi keamanan.
+> ⚠️ File credential (Supabase API) tidak disertakan demi keamanan.
 
 Untuk menjalankan sistem:
 
 1. Tambahkan file credential sendiri
-2. Atur koneksi Google Sheets
+2. Atur koneksi Supabase
 3. Sesuaikan konfigurasi di `secrets.toml`
 
 ---
